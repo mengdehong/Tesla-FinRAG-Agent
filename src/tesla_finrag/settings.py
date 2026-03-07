@@ -14,9 +14,13 @@ Usage::
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_PROCESSED_DIR = _PROJECT_ROOT / "data" / "processed"
 
 
 class AppSettings(BaseSettings):
@@ -57,6 +61,10 @@ class AppSettings(BaseSettings):
     )
 
     # ── Vector / fact store ───────────────────────────────────────────────────
+    processed_data_dir: str = Field(
+        str(_DEFAULT_PROCESSED_DIR),
+        description="Root directory containing processed runtime artifacts.",
+    )
     lancedb_uri: str = Field(
         "data/processed/lancedb",
         description="File-system path or URI for the LanceDB database.",

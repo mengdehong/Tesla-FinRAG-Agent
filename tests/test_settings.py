@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tesla_finrag.settings import AppSettings, get_settings
@@ -11,6 +13,7 @@ class TestAppSettings:
     def test_default_values_loaded(self) -> None:
         s = AppSettings()
         assert s.lancedb_uri == "data/processed/lancedb"
+        assert Path(s.processed_data_dir).name == "processed"
         assert s.retrieval_top_k == 8
         assert s.rerank_top_k == 4
         assert s.log_level == "INFO"
@@ -19,9 +22,11 @@ class TestAppSettings:
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("RETRIEVAL_TOP_K", "20")
         monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("PROCESSED_DATA_DIR", "/tmp/tesla-processed")
         s = AppSettings()
         assert s.retrieval_top_k == 20
         assert s.log_level == "DEBUG"
+        assert s.processed_data_dir == "/tmp/tesla-processed"
 
     def test_retrieval_top_k_lower_bound(self) -> None:
         from pydantic import ValidationError

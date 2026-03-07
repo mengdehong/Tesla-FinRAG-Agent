@@ -19,6 +19,7 @@ from tesla_finrag.runtime import (
     MalformedProcessedArtifactError,
     MissingProcessedArtifactError,
     load_processed_corpus,
+    resolve_processed_dir,
     validate_processed_dir,
 )
 
@@ -94,6 +95,24 @@ def _build_valid_fixture(root: Path) -> tuple[FilingDocument, SectionChunk, Tabl
 
 
 class TestLoadValidCorpus:
+    def test_default_processed_dir_is_repo_relative(self) -> None:
+        resolved = resolve_processed_dir()
+        assert resolved.name == "processed"
+        assert resolved.parent.name == "data"
+        assert resolved.is_absolute()
+
+    def test_env_processed_dir_override(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROCESSED_DATA_DIR", str(tmp_path))
+        from tesla_finrag.settings import get_settings
+
+        get_settings.cache_clear()
+        try:
+            assert resolve_processed_dir() == tmp_path
+        finally:
+            get_settings.cache_clear()
+
     def test_loads_filing(self, tmp_path: Path) -> None:
         filing, _, _, _ = _build_valid_fixture(tmp_path)
         corpus_repo, _ = load_processed_corpus(tmp_path)

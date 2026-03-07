@@ -247,7 +247,12 @@ class TestEvaluationRunner:
         assert loaded.total_questions == 2
 
     def test_default_pipeline_never_passes_insufficient_answers(self, benchmark_file: Path) -> None:
-        runner = EvaluationRunner(benchmark_path=benchmark_file)
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(corpus_repo=corpus_repo, facts_repo=facts_repo)
+        runner = EvaluationRunner(
+            pipeline=pipeline.answer_question,
+            benchmark_path=benchmark_file,
+        )
         run = runner.run_all()
         assert all(
             not (r.passed and r.answer_status == AnswerStatus.INSUFFICIENT_EVIDENCE)

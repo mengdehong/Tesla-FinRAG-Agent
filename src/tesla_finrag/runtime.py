@@ -32,10 +32,12 @@ from tesla_finrag.models import (
     TableChunk,
 )
 from tesla_finrag.retrieval import InMemoryCorpusRepository, InMemoryFactsRepository
+from tesla_finrag.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PROCESSED_DIR = Path("data/processed")
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_PROCESSED_DIR = _PROJECT_ROOT / "data" / "processed"
 
 # Artifact sub-paths the runtime requires.
 _FILINGS_DIR = "filings"
@@ -64,6 +66,14 @@ class MalformedProcessedArtifactError(ProcessedCorpusError):
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+
+def resolve_processed_dir(processed_dir: str | Path | None = None) -> Path:
+    """Resolve the processed corpus root from arg, settings, or repo default."""
+    if processed_dir is not None:
+        return Path(processed_dir).expanduser()
+    settings = get_settings()
+    return Path(settings.processed_data_dir).expanduser()
 
 
 def _require_dir(path: Path, label: str) -> None:
@@ -167,12 +177,13 @@ def _load_facts(facts_path: Path) -> list[FactRecord]:
 
 
 def load_processed_corpus(
-    processed_dir: Path = _DEFAULT_PROCESSED_DIR,
+    processed_dir: str | Path | None = None,
 ) -> tuple[InMemoryCorpusRepository, InMemoryFactsRepository]:
     """Load processed artifacts into in-memory repositories.
 
     Args:
-        processed_dir: Root directory containing processed artifacts.
+        processed_dir: Optional root directory containing processed artifacts.
+            If omitted, runtime settings are used.
 
     Returns:
         A ``(corpus_repo, facts_repo)`` tuple ready for use by the
@@ -182,12 +193,13 @@ def load_processed_corpus(
         MissingProcessedArtifactError: A required directory or file is absent.
         MalformedProcessedArtifactError: An artifact cannot be parsed.
     """
-    validate_processed_dir(processed_dir)
+    resolved_dir = resolve_processed_dir(processed_dir)
+    validate_processed_dir(resolved_dir)
 
-    filings = _load_filings(processed_dir / _FILINGS_DIR)
-    section_chunks = _load_section_chunks(processed_dir / _CHUNKS_DIR)
-    table_chunks = _load_table_chunks(processed_dir / _TABLES_DIR)
-    facts = _load_facts(processed_dir / _FACTS_FILE)
+    filings = _load_filings(resolved_dir / _FILINGS_DIR)
+    section_chunks = _load_section_chunks(resolved_dir / _CHUNKS_DIR)
+    table_chunks = _load_table_chunks(resolved_dir / _TABLES_DIR)
+    facts = _load_facts(resolved_dir / _FACTS_FILE)
 
     corpus_repo = InMemoryCorpusRepository()
     facts_repo = InMemoryFactsRepository()

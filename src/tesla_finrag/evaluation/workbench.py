@@ -584,13 +584,14 @@ class WorkbenchPipeline:
         return corpus_repo, facts_repo
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)
 def get_workbench_pipeline(
     provider_mode: ProviderMode = ProviderMode.LOCAL,
+    processed_dir: str | None = None,
 ) -> WorkbenchPipeline:
     """Create a workbench pipeline with the given provider mode.
 
-    Loads the processed corpus from ``data/processed/``.  Raises
+    Loads the processed corpus from the configured processed-data root. Raises
     :class:`~tesla_finrag.runtime.ProcessedCorpusError` when artifacts are
     missing or invalid.
 
@@ -599,7 +600,7 @@ def get_workbench_pipeline(
     """
     from tesla_finrag.runtime import load_processed_corpus
 
-    corpus_repo, facts_repo = load_processed_corpus()
+    corpus_repo, facts_repo = load_processed_corpus(processed_dir)
 
     provider = None
     if provider_mode == ProviderMode.OPENAI_COMPATIBLE:

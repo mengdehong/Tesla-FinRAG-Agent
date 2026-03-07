@@ -21,9 +21,9 @@ from tesla_finrag.evaluation.workbench import (
     ProviderMode,
     WorkbenchPipeline,
     _seed_demo_repositories,
+    get_workbench_pipeline,
 )
 from tesla_finrag.provider import ProviderError
-from tesla_finrag.runtime import load_processed_corpus
 
 # ---------------------------------------------------------------------------
 # Runtime: local mode
@@ -137,36 +137,68 @@ class TestRemoteModeFailure:
 class TestCLISmoke:
     """Smoke tests for the ``ask`` CLI subcommand."""
 
-    def test_cli_local_text_output(self) -> None:
-        """Local-mode pipeline returns expected text output shape."""
-        corpus_repo, facts_repo = _seed_demo_repositories()
-        pipeline = WorkbenchPipeline(
-            corpus_repo=corpus_repo,
-            facts_repo=facts_repo,
-            provider_mode=ProviderMode.LOCAL,
-        )
-        question = (
-            "Compare Tesla's total revenue between FY2022 and FY2023. "
-            "What was the year-over-year growth rate?"
-        )
-        _, _, answer = pipeline.run(question)
-        assert answer.status.value == "ok"
-        assert answer.answer_text
-        assert len(answer.citations) > 0
-        assert answer.retrieval_debug["provider_mode"] == "local"
+    def test_cli_local_text_output(self, tmp_path: Path) -> None:
+        """CLI uses the processed runtime and returns summary output."""
+        from tests.test_runtime import _build_valid_fixture
 
-    def test_cli_local_json_output(self) -> None:
-        """Local-mode pipeline returns a valid JSON-serializable payload."""
-        corpus_repo, facts_repo = _seed_demo_repositories()
-        pipeline = WorkbenchPipeline(
-            corpus_repo=corpus_repo,
-            facts_repo=facts_repo,
-            provider_mode=ProviderMode.LOCAL,
+        _build_valid_fixture(tmp_path)
+        repo_root = Path(__file__).resolve().parents[1]
+        env = {
+            **subprocess.os.environ,
+            "PROCESSED_DATA_DIR": str(tmp_path),
+        }
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "tesla_finrag",
+                "ask",
+                "--question",
+                "What was Tesla's Q1 2023 revenue?",
+                "--provider",
+                "local",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=repo_root,
+            env=env,
         )
-        _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
-        payload = json.loads(answer.model_dump_json())
+        assert result.returncode == 0
+        assert "Status: ok" in result.stdout
+        assert "Citations:" in result.stdout
+
+    def test_cli_local_json_output(self, tmp_path: Path) -> None:
+        """CLI JSON path uses the processed runtime from env override."""
+        from tests.test_runtime import _build_valid_fixture
+
+        _build_valid_fixture(tmp_path)
+        repo_root = Path(__file__).resolve().parents[1]
+        env = {
+            **subprocess.os.environ,
+            "PROCESSED_DATA_DIR": str(tmp_path),
+        }
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "tesla_finrag",
+                "ask",
+                "--question",
+                "What was Tesla's Q1 2023 revenue?",
+                "--provider",
+                "local",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=repo_root,
+            env=env,
+        )
+        assert result.returncode == 0
+        payload = json.loads(result.stdout)
         assert payload["status"] == "ok"
-        assert "answer_text" in payload
         assert payload["retrieval_debug"]["provider_mode"] == "local"
         assert payload["retrieval_debug"]["answer_model"] == "none"
 
@@ -235,53 +267,48 @@ class TestCLISmoke:
 class TestSharedProcessedRuntime:
     """All surfaces must go through the same processed runtime bootstrap."""
 
-    def test_app_and_cli_share_processed_runtime(self, tmp_path: Path) -> None:
-        """WorkbenchPipeline built from load_processed_corpus produces the
-        same answer shape as directly constructing with the same repos."""
+    def test_get_workbench_pipeline_uses_processed_runtime(self, tmp_path: Path) -> None:
+        """Shared entrypoint builds the pipeline from processed artifacts."""
         from tests.test_runtime import _build_valid_fixture
 
         _build_valid_fixture(tmp_path)
-        corpus_repo, facts_repo = load_processed_corpus(tmp_path)
-
-        pipeline = WorkbenchPipeline(
-            corpus_repo=corpus_repo,
-            facts_repo=facts_repo,
+        get_workbench_pipeline.cache_clear()
+        pipeline = get_workbench_pipeline(
             provider_mode=ProviderMode.LOCAL,
+            processed_dir=str(tmp_path),
         )
-
         _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
         assert answer.status is not None
         assert answer.retrieval_debug["provider_mode"] == "local"
 
-    def test_evaluation_runner_uses_processed_runtime(self, tmp_path: Path) -> None:
-        """EvaluationRunner can run against a processed-corpus pipeline."""
+    def test_evaluation_runner_default_pipeline_uses_processed_runtime(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Default runner path uses the shared processed runtime entrypoint."""
+        from tesla_finrag.evaluation.models import BenchmarkQuestion
         from tesla_finrag.evaluation.runner import EvaluationRunner
-        from tesla_finrag.models import AnswerPayload
+        from tesla_finrag.settings import get_settings
         from tests.test_runtime import _build_valid_fixture
 
         _build_valid_fixture(tmp_path)
-        corpus_repo, facts_repo = load_processed_corpus(tmp_path)
+        monkeypatch.setenv("PROCESSED_DATA_DIR", str(tmp_path))
+        get_settings.cache_clear()
+        get_workbench_pipeline.cache_clear()
 
-        pipeline = WorkbenchPipeline(
-            corpus_repo=corpus_repo,
-            facts_repo=facts_repo,
-            provider_mode=ProviderMode.LOCAL,
-        )
-
-        def pipeline_fn(question: str) -> AnswerPayload:
-            return pipeline.answer_question(question)
-
-        runner = EvaluationRunner(pipeline=pipeline_fn)
-        from tesla_finrag.evaluation.models import BenchmarkQuestion
-
-        questions = [
-            BenchmarkQuestion(
-                question_id="smoke-1",
-                question="What was Tesla's Q1 2023 revenue?",
-                category="cross_year",
-                difficulty="easy",
-                expected_answer_contains=[],
-            )
-        ]
-        run = runner.run(questions)
-        assert run.total_questions == 1
+        try:
+            runner = EvaluationRunner()
+            questions = [
+                BenchmarkQuestion(
+                    question_id="smoke-1",
+                    question="What was Tesla's Q1 2023 revenue?",
+                    category="cross_year",
+                    difficulty="easy",
+                    expected_answer_contains=[],
+                )
+            ]
+            run = runner.run(questions)
+            assert run.total_questions == 1
+            assert run.summary.error_count == 0
+        finally:
+            get_settings.cache_clear()
+            get_workbench_pipeline.cache_clear()

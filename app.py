@@ -78,14 +78,14 @@ with st.sidebar:
     st.divider()
     st.caption("Tesla FinRAG Agent v0.1.0")
     st.caption(
-        "Mode: demo corpus + "
+        "Mode: processed runtime + "
         + ("local deterministic pipeline" if selected_provider == "local" else "remote provider")
     )
     st.caption(f"Corpus years: {', '.join(str(year) for year in available_years)}")
 
 st.title("Tesla FinRAG Evaluation Workbench")
 st.markdown(
-    "Ask financial questions about Tesla's SEC filings in the local demo corpus. "
+    "Ask financial questions about Tesla's SEC filings in the processed runtime corpus. "
     "The workbench runs the real planning, retrieval, and answer-composition "
     "services, then shows grounded answers with citations, calculation traces, "
     "and retrieval diagnostics."

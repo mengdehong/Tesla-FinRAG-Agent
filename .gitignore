@@ -46,3 +46,4 @@ secrets.toml
 # Evaluation & Reports
 reports/
 evaluation_results/
+!.env.example

@@ -45,6 +45,16 @@ class AppSettings(BaseSettings):
         "text-embedding-3-small",
         description="Model used to embed corpus chunks.",
     )
+    openai_base_url: str | None = Field(
+        None,
+        description="Optional base URL for OpenAI-compatible API endpoints.",
+    )
+    openai_timeout_seconds: int = Field(
+        60,
+        ge=1,
+        le=300,
+        description="Request timeout in seconds for OpenAI API calls.",
+    )
 
     # ── Vector / fact store ───────────────────────────────────────────────────
     lancedb_uri: str = Field(

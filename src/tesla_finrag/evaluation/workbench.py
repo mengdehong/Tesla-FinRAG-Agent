@@ -3,17 +3,26 @@
 This module wires the real planning -> retrieval -> answer pipeline over a
 small in-memory Tesla demo corpus. It is intentionally deterministic so local
 demo runs and evaluation runs are reproducible.
+
+The pipeline now supports two provider modes:
+- ``local`` (default): deterministic template-based answers, no network calls.
+- ``openai-compatible``: uses the OpenAI SDK for embeddings and grounded chat
+  narration over the same demo corpus.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from functools import lru_cache
+from uuid import UUID
 
 from tesla_finrag.answer import GroundedAnswerComposer
 from tesla_finrag.models import (
     AnswerPayload,
+    AnswerStatus,
     EvidenceBundle,
     FactRecord,
     FilingDocument,
@@ -27,7 +36,27 @@ from tesla_finrag.retrieval import (
     HybridRetrievalService,
     InMemoryCorpusRepository,
     InMemoryFactsRepository,
+    InMemoryRetrievalStore,
 )
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Provider mode enum
+# ---------------------------------------------------------------------------
+
+
+class ProviderMode(StrEnum):
+    """Supported provider modes for the demo pipeline."""
+
+    LOCAL = "local"
+    OPENAI_COMPATIBLE = "openai-compatible"
+
+
+# ---------------------------------------------------------------------------
+# Filing scope
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -57,6 +86,11 @@ class FilingScope:
             "filing_type": self.filing_type.value if self.filing_type else None,
             "quarters": [f"Q{quarter}" for quarter in self.quarters],
         }
+
+
+# ---------------------------------------------------------------------------
+# Demo data helpers
+# ---------------------------------------------------------------------------
 
 
 def _make_filing(
@@ -268,17 +302,47 @@ def _seed_demo_repositories() -> tuple[InMemoryCorpusRepository, InMemoryFactsRe
     return corpus_repo, facts_repo
 
 
+# ---------------------------------------------------------------------------
+# Chunk text helpers (for embedding)
+# ---------------------------------------------------------------------------
+
+
+def _chunk_text(chunk: SectionChunk | TableChunk) -> str:
+    """Extract the searchable text from a chunk for embedding."""
+    if isinstance(chunk, SectionChunk):
+        return chunk.text
+    return chunk.raw_text
+
+
+# ---------------------------------------------------------------------------
+# WorkbenchPipeline
+# ---------------------------------------------------------------------------
+
+
 class WorkbenchPipeline:
-    """Reusable plan -> retrieve -> answer pipeline over the demo corpus."""
+    """Reusable plan -> retrieve -> answer pipeline over the demo corpus.
+
+    Supports ``local`` (default) and ``openai-compatible`` provider modes.
+    """
 
     def __init__(
         self,
         corpus_repo: InMemoryCorpusRepository,
         facts_repo: InMemoryFactsRepository,
+        *,
+        provider_mode: ProviderMode = ProviderMode.LOCAL,
+        provider: object | None = None,
     ) -> None:
         self._corpus_repo = corpus_repo
         self._facts_repo = facts_repo
         self._planner = RuleBasedQueryPlanner()
+        self._provider_mode = provider_mode
+        self._provider = provider  # OpenAIProvider instance when remote
+        self._vector_index_cache: dict[tuple[UUID, ...], InMemoryRetrievalStore] = {}
+
+    @property
+    def provider_mode(self) -> ProviderMode:
+        return self._provider_mode
 
     @property
     def available_years(self) -> list[int]:
@@ -305,6 +369,22 @@ class WorkbenchPipeline:
     ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
         plan = self._planner.plan(question)
         corpus_repo, facts_repo = self._scoped_repositories(scope)
+
+        if self._provider_mode == ProviderMode.OPENAI_COMPATIBLE:
+            return self._run_remote(plan, corpus_repo, facts_repo, scope)
+        return self._run_local(plan, corpus_repo, facts_repo, scope)
+
+    # ------------------------------------------------------------------
+    # Local (deterministic) path
+    # ------------------------------------------------------------------
+
+    def _run_local(
+        self,
+        plan: QueryPlan,
+        corpus_repo: InMemoryCorpusRepository,
+        facts_repo: InMemoryFactsRepository,
+        scope: FilingScope | None,
+    ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
         retrieval = HybridRetrievalService(
             corpus_repo=corpus_repo,
             facts_repo=facts_repo,
@@ -316,11 +396,166 @@ class WorkbenchPipeline:
         answer = composer.answer(plan, bundle)
         answer.retrieval_debug.update(
             {
+                "provider_mode": ProviderMode.LOCAL.value,
+                "embedding_provider": "none",
+                "answer_provider": "template",
+                "embedding_model": "none",
+                "answer_model": "none",
+                "chat_model": "none",
+                "vector_hits": bundle.metadata.get("vector_hits", 0),
                 "active_scope": (scope or FilingScope()).as_metadata(),
                 "available_filings": len(corpus_repo.list_filings()),
             }
         )
         return plan, bundle, answer
+
+    # ------------------------------------------------------------------
+    # Remote (openai-compatible) path
+    # ------------------------------------------------------------------
+
+    def _run_remote(
+        self,
+        plan: QueryPlan,
+        corpus_repo: InMemoryCorpusRepository,
+        facts_repo: InMemoryFactsRepository,
+        scope: FilingScope | None,
+    ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
+        from tesla_finrag.provider import OpenAIProvider, ProviderError
+
+        if self._provider is None:
+            raise ProviderError(
+                "openai-compatible provider mode selected but no provider was configured. "
+                "Set OPENAI_API_KEY in the environment."
+            )
+
+        provider: OpenAIProvider = self._provider  # type: ignore[assignment]
+
+        # Build the vector index for the scoped corpus
+        retrieval_store = self._build_remote_vector_index(corpus_repo, provider)
+
+        # Create embed function for query-time
+        def embed_fn(text: str) -> list[float]:
+            vectors = provider.embed_texts([text])
+            return vectors[0] if vectors else []
+
+        retrieval = HybridRetrievalService(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            retrieval_store=retrieval_store,
+            embed_fn=embed_fn,
+        )
+        composer = GroundedAnswerComposer(corpus_repo=corpus_repo, facts_repo=facts_repo)
+
+        bundle = retrieval.retrieve(plan)
+
+        # Use local composer first to get citations, status, calc trace, confidence
+        local_answer = composer.answer(plan, bundle)
+
+        if local_answer.status != AnswerStatus.OK:
+            local_answer.retrieval_debug.update(
+                {
+                    "provider_mode": ProviderMode.OPENAI_COMPATIBLE.value,
+                    "embedding_provider": "openai-compatible",
+                    "answer_provider": "template-guardrail",
+                    **provider.info.as_dict(),
+                    "vector_hits": bundle.metadata.get("vector_hits", 0),
+                    "active_scope": (scope or FilingScope()).as_metadata(),
+                    "available_filings": len(corpus_repo.list_filings()),
+                }
+            )
+            return plan, bundle, local_answer
+
+        # Now narrate the answer text using the remote chat model
+        evidence_summary = self._build_evidence_summary(bundle)
+        try:
+            remote_text = provider.generate_grounded_answer(
+                question=plan.original_query,
+                evidence=evidence_summary,
+                calculation_trace=local_answer.calculation_trace or None,
+            )
+        except ProviderError:
+            logger.exception("Remote chat narration failed")
+            raise
+
+        # Replace the template answer text with the remote-narrated text
+        answer = AnswerPayload(
+            plan_id=local_answer.plan_id,
+            status=local_answer.status,
+            answer_text=remote_text,
+            citations=local_answer.citations,
+            calculation_trace=local_answer.calculation_trace,
+            retrieval_debug=local_answer.retrieval_debug,
+            confidence=local_answer.confidence,
+        )
+        answer.retrieval_debug.update(
+            {
+                "provider_mode": ProviderMode.OPENAI_COMPATIBLE.value,
+                "embedding_provider": "openai-compatible",
+                "answer_provider": "openai-compatible",
+                **provider.info.as_dict(),
+                "vector_hits": bundle.metadata.get("vector_hits", 0),
+                "active_scope": (scope or FilingScope()).as_metadata(),
+                "available_filings": len(corpus_repo.list_filings()),
+            }
+        )
+        return plan, bundle, answer
+
+    def _build_remote_vector_index(
+        self,
+        corpus_repo: InMemoryCorpusRepository,
+        provider: object,
+    ) -> InMemoryRetrievalStore:
+        """Embed all corpus chunks and build an in-memory vector index."""
+        from tesla_finrag.provider import OpenAIProvider
+
+        assert isinstance(provider, OpenAIProvider)
+
+        cache_key = tuple(sorted((filing.doc_id for filing in corpus_repo.list_filings()), key=str))
+        cached_store = self._vector_index_cache.get(cache_key)
+        if cached_store is not None:
+            return cached_store
+
+        store = InMemoryRetrievalStore()
+        all_chunks: list[SectionChunk | TableChunk] = []
+        all_chunks.extend(corpus_repo.all_section_chunks())
+        all_chunks.extend(corpus_repo.all_table_chunks())
+
+        if not all_chunks:
+            return store
+
+        # Batch embed all chunk texts
+        texts = [_chunk_text(c) for c in all_chunks]
+        embeddings = provider.embed_texts(texts)
+
+        for chunk, embedding in zip(all_chunks, embeddings):
+            if isinstance(chunk, SectionChunk):
+                store.index_section_chunk(chunk, embedding)
+            else:
+                store.index_table_chunk(chunk, embedding)
+
+        self._vector_index_cache[cache_key] = store
+        logger.info("Built remote vector index with %d chunks", len(all_chunks))
+        return store
+
+    @staticmethod
+    def _build_evidence_summary(bundle: EvidenceBundle) -> str:
+        """Assemble a text summary of evidence for the chat model."""
+        parts: list[str] = []
+        for chunk in bundle.section_chunks:
+            parts.append(f"[{chunk.section_title}] {chunk.text}")
+        for chunk in bundle.table_chunks:
+            caption = f"Table: {chunk.caption}\n" if chunk.caption else ""
+            parts.append(f"{caption}{chunk.raw_text}")
+        for fact in bundle.facts:
+            parts.append(
+                f"Fact: {fact.label} = {fact.value * fact.scale:,.2f} {fact.unit} "
+                f"(period ending {fact.period_end})"
+            )
+        return "\n\n".join(parts) if parts else "No evidence found."
+
+    # ------------------------------------------------------------------
+    # Scoped repositories
+    # ------------------------------------------------------------------
 
     def _scoped_repositories(
         self,
@@ -351,6 +586,25 @@ class WorkbenchPipeline:
 
 
 @lru_cache(maxsize=1)
-def get_workbench_pipeline() -> WorkbenchPipeline:
+def get_workbench_pipeline(
+    provider_mode: ProviderMode = ProviderMode.LOCAL,
+) -> WorkbenchPipeline:
+    """Create a workbench pipeline with the given provider mode.
+
+    For ``openai-compatible`` mode, the provider is constructed from
+    :func:`~tesla_finrag.settings.get_settings`.
+    """
     corpus_repo, facts_repo = _seed_demo_repositories()
-    return WorkbenchPipeline(corpus_repo=corpus_repo, facts_repo=facts_repo)
+
+    provider = None
+    if provider_mode == ProviderMode.OPENAI_COMPATIBLE:
+        from tesla_finrag.provider import OpenAIProvider
+
+        provider = OpenAIProvider.from_settings()
+
+    return WorkbenchPipeline(
+        corpus_repo=corpus_repo,
+        facts_repo=facts_repo,
+        provider_mode=provider_mode,
+        provider=provider,
+    )

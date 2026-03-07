@@ -27,4 +27,4 @@ def test_package_entrypoint_help_succeeds() -> None:
     )
 
     assert result.returncode == 0
-    assert "Tesla FinRAG workspace bootstrap CLI." in result.stdout
+    assert "Tesla FinRAG workspace CLI." in result.stdout

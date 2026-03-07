@@ -9,7 +9,12 @@ from tesla_finrag.evaluation.models import (
     QuestionResult,
     RunSummary,
 )
-from tesla_finrag.evaluation.workbench import FilingScope, WorkbenchPipeline, get_workbench_pipeline
+from tesla_finrag.evaluation.workbench import (
+    FilingScope,
+    ProviderMode,
+    WorkbenchPipeline,
+    get_workbench_pipeline,
+)
 
 __all__ = [
     "BenchmarkQuestion",
@@ -17,6 +22,7 @@ __all__ = [
     "EvaluationRunner",
     "FailureAnalysis",
     "FilingScope",
+    "ProviderMode",
     "QuestionResult",
     "RunSummary",
     "WorkbenchPipeline",

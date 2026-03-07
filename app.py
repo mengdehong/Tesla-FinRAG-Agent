@@ -10,7 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from tesla_finrag.evaluation import FilingScope, get_workbench_pipeline
+from tesla_finrag.evaluation import FilingScope, ProviderMode, get_workbench_pipeline
 from tesla_finrag.models import AnswerStatus, FilingType
 
 st.set_page_config(page_title="Tesla FinRAG Workbench", layout="wide")
@@ -28,11 +28,24 @@ def _quarter_options(quarters: list[int]) -> list[str]:
     return [f"Q{quarter}" for quarter in quarters]
 
 
+with st.sidebar:
+    st.header("Runtime")
+    selected_provider = st.radio(
+        "Provider",
+        options=[mode.value for mode in ProviderMode],
+        format_func=lambda value: (
+            "local (deterministic)"
+            if value == ProviderMode.LOCAL.value
+            else "openai-compatible (remote)"
+        ),
+        index=0,
+    )
+
 try:
-    pipeline = get_workbench_pipeline()
+    pipeline = get_workbench_pipeline(provider_mode=ProviderMode(selected_provider))
 except Exception as exc:  # pragma: no cover - exercised in the UI
     st.title("Tesla FinRAG Evaluation Workbench")
-    st.error(f"Unable to initialize the local demo pipeline: {exc}")
+    st.error(f"Unable to initialize the selected demo pipeline: {exc}")
     st.stop()
 
 available_years = pipeline.available_years
@@ -64,7 +77,10 @@ with st.sidebar:
 
     st.divider()
     st.caption("Tesla FinRAG Agent v0.1.0")
-    st.caption("Mode: demo corpus + real pipeline")
+    st.caption(
+        "Mode: demo corpus + "
+        + ("local deterministic pipeline" if selected_provider == "local" else "remote provider")
+    )
     st.caption(f"Corpus years: {', '.join(str(year) for year in available_years)}")
 
 st.title("Tesla FinRAG Evaluation Workbench")

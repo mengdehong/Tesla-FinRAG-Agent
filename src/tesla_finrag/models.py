@@ -307,6 +307,10 @@ class AnswerPayload(BaseModel):
         default_factory=list,
         description="Step-by-step arithmetic used, if applicable.",
     )
+    retrieval_debug: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Retrieval and planning diagnostics for debugging and evaluation.",
+    )
     confidence: float | None = Field(
         None, ge=0.0, le=1.0, description="Optional model confidence score."
     )

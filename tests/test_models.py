@@ -271,9 +271,11 @@ class TestAnswerPayload:
             status=AnswerStatus.OK,
             answer_text="Tesla's 2023 revenue was $96.8 billion.",
             citations=[citation],
+            retrieval_debug={"query_type": "hybrid_reasoning"},
         )
         assert payload.status == AnswerStatus.OK
         assert payload.citations[0].excerpt == "Total revenues were $96.8B."
+        assert payload.retrieval_debug["query_type"] == "hybrid_reasoning"
 
     def test_confidence_range_validated(self) -> None:
         from uuid import uuid4

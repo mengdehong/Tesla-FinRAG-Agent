@@ -51,11 +51,6 @@ def _parse_date(s: str) -> date:
     return date.fromisoformat(s)
 
 
-def _form_to_filing_type_str(form: str) -> str:
-    """Map XBRL form string to our filing type."""
-    return form  # "10-K" or "10-Q" — already matches FilingType values.
-
-
 def _resolve_doc_id(
     fy: int,
     fp: str,

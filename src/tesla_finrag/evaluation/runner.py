@@ -152,7 +152,7 @@ class EvaluationRunner:
             passed = self._check_answer(q, answer)
             return QuestionResult(
                 question_id=q.question_id,
-                answer_status=answer.status.value,
+                answer_status=answer.status,
                 answer_text=answer.answer_text,
                 latency_ms=round(elapsed_ms, 2),
                 passed=passed,

@@ -7,6 +7,7 @@ Launch locally with::
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from tesla_finrag.evaluation import FilingScope, get_workbench_pipeline
@@ -27,7 +28,13 @@ def _quarter_options(quarters: list[int]) -> list[str]:
     return [f"Q{quarter}" for quarter in quarters]
 
 
-pipeline = get_workbench_pipeline()
+try:
+    pipeline = get_workbench_pipeline()
+except Exception as exc:  # pragma: no cover - exercised in the UI
+    st.title("Tesla FinRAG Evaluation Workbench")
+    st.error(f"Unable to initialize the local demo pipeline: {exc}")
+    st.stop()
+
 available_years = pipeline.available_years
 available_quarters = pipeline.available_quarters
 quarter_labels = _quarter_options(available_quarters)
@@ -77,17 +84,25 @@ question = st.text_area(
 run_clicked = st.button("Run Query", type="primary", use_container_width=True)
 
 if run_clicked and question.strip():
+    if not fiscal_years:
+        st.warning("Select at least one fiscal year before running a query.")
+        st.stop()
+
     quarter_numbers = tuple(
         int(label.removeprefix("Q")) for label in selected_quarter_labels if label.startswith("Q")
     )
     scope = FilingScope(
         fiscal_years=tuple(sorted(fiscal_years)),
         filing_type=selected_filing_type,
-        quarters=quarter_numbers,
+        quarters=(quarter_numbers if selected_filing_type == FilingType.QUARTERLY else ()),
     )
 
-    with st.spinner("Running pipeline..."):
-        plan, bundle, answer = pipeline.run(question.strip(), scope=scope)
+    try:
+        with st.spinner("Running pipeline..."):
+            plan, bundle, answer = pipeline.run(question.strip(), scope=scope)
+    except Exception as exc:  # pragma: no cover - exercised in the UI
+        st.error(f"The pipeline failed while answering this question: {exc}")
+        st.stop()
 
     st.subheader("Answer")
 
@@ -161,8 +176,6 @@ if run_clicked and question.strip():
                 with st.container(border=True):
                     st.caption(f"Table: {chunk.caption} | Section: {chunk.section_title}")
                     if chunk.headers and chunk.rows:
-                        import pandas as pd
-
                         st.dataframe(
                             pd.DataFrame(chunk.rows, columns=chunk.headers),
                             use_container_width=True,
@@ -175,7 +188,7 @@ if run_clicked and question.strip():
                     if fact.period_start
                     else str(fact.period_end)
                 )
-                st.markdown(f"- `{fact.concept}` = {fact.value:,.0f} {fact.unit} ({period_label})")
+                st.markdown(f"- `{fact.concept}` = {fact.value:,.2f} {fact.unit} ({period_label})")
 
         with tab_debug:
             st.markdown("**Retrieval scores** (chunk_id -> relevance):")

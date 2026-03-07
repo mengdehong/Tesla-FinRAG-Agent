@@ -22,6 +22,27 @@ from tesla_finrag.models import SectionChunk, TableChunk
 logger = logging.getLogger(__name__)
 
 
+def _resolve_source_pdf_path(raw_dir: Path, source_path: str) -> Path | None:
+    """Resolve a filing PDF path from either repo-relative or local raw paths."""
+    source = Path(source_path)
+    candidates: list[Path] = []
+
+    if source.is_absolute():
+        candidates.append(source)
+    else:
+        candidates.append(raw_dir / source.name)
+        candidates.extend(parent / source for parent in (raw_dir, *raw_dir.parents))
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def run_pipeline(
     raw_dir: Path = Path("data/raw"),
     output_dir: Path = Path("data/processed"),
@@ -51,10 +72,8 @@ def run_pipeline(
     all_table_chunks: dict[UUID, list[TableChunk]] = {}
 
     for filing in filings:
-        pdf_path = raw_dir.parent.parent / filing.source_path
-        if not pdf_path.exists():
-            pdf_path = Path(filing.source_path)
-        if not pdf_path.exists():
+        pdf_path = _resolve_source_pdf_path(raw_dir, filing.source_path)
+        if pdf_path is None:
             logger.warning(
                 "PDF not found for %s: %s", period_key_from_doc(filing), filing.source_path
             )
@@ -63,13 +82,18 @@ def run_pipeline(
         pk = period_key_from_doc(filing)
         logger.info("Parsing %s (%s)...", pk, filing.source_path)
 
-        sections = parse_narrative(pdf_path, filing.doc_id)
-        all_section_chunks[filing.doc_id] = sections
-        logger.info("  %d narrative chunks", len(sections))
+        try:
+            sections = parse_narrative(pdf_path, filing.doc_id)
+            all_section_chunks[filing.doc_id] = sections
+            logger.info("  %d narrative chunks", len(sections))
 
-        tables = extract_tables(pdf_path, filing.doc_id)
-        all_table_chunks[filing.doc_id] = tables
-        logger.info("  %d table chunks", len(tables))
+            tables = extract_tables(pdf_path, filing.doc_id)
+            all_table_chunks[filing.doc_id] = tables
+            logger.info("  %d table chunks", len(tables))
+        except Exception:
+            logger.exception("Failed to ingest %s from %s", pk, pdf_path)
+            all_section_chunks.setdefault(filing.doc_id, [])
+            all_table_chunks.setdefault(filing.doc_id, [])
 
     # 4. Normalize XBRL/companyfacts.
     companyfacts_path = raw_dir / companyfacts_filename

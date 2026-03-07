@@ -19,6 +19,7 @@ from tesla_finrag.evaluation.models import (
     EvaluationRun,
     FailureAnalysis,
     QuestionCategory,
+    ResultStatus,
     RunSummary,
     Severity,
 )
@@ -285,6 +286,7 @@ class TestRunSummary:
             pass_rate=0.7,
         )
         assert 0.0 <= summary.pass_rate <= 1.0
+        assert summary.pass_rate == 0.7
 
     def test_zero_total(self) -> None:
         summary = RunSummary(
@@ -296,6 +298,18 @@ class TestRunSummary:
             pass_rate=0.0,
         )
         assert summary.total == 0
+
+    def test_pass_rate_is_recomputed_from_counts(self) -> None:
+        summary = RunSummary(
+            total=4,
+            pass_count=1,
+            fail_count=2,
+            error_count=1,
+            avg_latency_ms=12.0,
+            pass_rate=0.99,
+        )
+
+        assert summary.pass_rate == 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +413,56 @@ class TestDemoResponseContract:
         assert len(plan.required_periods) >= 1
         assert len(plan.required_concepts) >= 1
         assert "us-gaap:Revenues" in plan.required_concepts
+
+
+class TestWorkbenchHelpers:
+    def test_filing_scope_matches_selected_quarters_only(self) -> None:
+        pipeline = get_workbench_pipeline()
+        quarterly_filing = next(
+            filing
+            for filing in pipeline._corpus_repo.list_filings()
+            if filing.fiscal_year == 2023 and filing.fiscal_quarter == 2
+        )
+        annual_filing = next(
+            filing
+            for filing in pipeline._corpus_repo.list_filings()
+            if filing.filing_type == FilingType.ANNUAL
+        )
+
+        scope = FilingScope(
+            fiscal_years=(2023,),
+            filing_type=FilingType.QUARTERLY,
+            quarters=(2,),
+        )
+
+        assert scope.matches(quarterly_filing) is True
+        assert scope.matches(annual_filing) is False
+
+    def test_make_filing_rolls_december_to_next_year(self) -> None:
+        from tesla_finrag.evaluation.workbench import _make_filing
+
+        filing = _make_filing(
+            FilingType.ANNUAL,
+            date(2023, 12, 31),
+            2023,
+            None,
+            "data/raw/Tesla_2023_全年_10-K.pdf",
+        )
+
+        assert filing.filed_at == date(2024, 1, 15)
+
+    def test_question_result_accepts_error_status_enum(self) -> None:
+        from tesla_finrag.evaluation.models import QuestionResult
+
+        result = QuestionResult(
+            question_id="ERR-001",
+            answer_status=ResultStatus.ERROR,
+            answer_text="",
+            latency_ms=0.0,
+            passed=False,
+        )
+
+        assert result.answer_status == ResultStatus.ERROR
 
 
 # ---------------------------------------------------------------------------

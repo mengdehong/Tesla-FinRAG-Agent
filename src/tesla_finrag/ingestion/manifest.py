@@ -63,17 +63,6 @@ def _period_end_for(fiscal_year: int, fiscal_quarter: int | None) -> date:
     return date(fiscal_year, month, day)
 
 
-def _expected_filename(
-    fiscal_year: int, fiscal_quarter: int | None, filing_type: FilingType
-) -> str:
-    """Build the conventional raw PDF filename."""
-    if fiscal_quarter is None:
-        period_token = "全年"
-    else:
-        period_token = f"Q{fiscal_quarter}"
-    return f"Tesla_{fiscal_year}_{period_token}_{filing_type.value}.pdf"
-
-
 # ---------------------------------------------------------------------------
 # Target set generation
 # ---------------------------------------------------------------------------

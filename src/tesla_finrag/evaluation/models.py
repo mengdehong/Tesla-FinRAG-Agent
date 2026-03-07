@@ -10,7 +10,9 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from tesla_finrag.models import AnswerStatus
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -101,7 +103,9 @@ class QuestionResult(BaseModel):
     """Outcome of running a single benchmark question."""
 
     question_id: str
-    answer_status: str = Field(description="AnswerStatus value from the pipeline.")
+    answer_status: AnswerStatus | ResultStatus = Field(
+        description="AnswerStatus or runner error state for the question."
+    )
     answer_text: str
     latency_ms: float = Field(ge=0)
     passed: bool
@@ -117,6 +121,11 @@ class RunSummary(BaseModel):
     error_count: int
     avg_latency_ms: float
     pass_rate: float = Field(ge=0.0, le=1.0, description="Fraction of questions that passed.")
+
+    @model_validator(mode="after")
+    def _recompute_pass_rate(self) -> RunSummary:
+        self.pass_rate = round(self.pass_count / self.total, 4) if self.total > 0 else 0.0
+        return self
 
 
 class EvaluationRun(BaseModel):

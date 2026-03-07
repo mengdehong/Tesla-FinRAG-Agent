@@ -8,7 +8,7 @@ or ``None`` when the source is not available locally.
 from __future__ import annotations
 
 from datetime import date
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from tesla_finrag.models import (
     FilingAvailability,
@@ -27,7 +27,7 @@ _DOC_ID_NAMESPACE = NAMESPACE_URL
 
 def _stable_doc_id(
     ticker: str, filing_type: str, fiscal_year: int, fiscal_quarter: int | None
-) -> str:
+) -> UUID:
     """Generate a deterministic UUID for a filing based on its identity."""
     q_part = f"Q{fiscal_quarter}" if fiscal_quarter else "FY"
     url = f"tesla-finrag://{ticker}/{filing_type}/{fiscal_year}/{q_part}"

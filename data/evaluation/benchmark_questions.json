@@ -4,7 +4,7 @@
     "question": "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?",
     "category": "cross_year",
     "difficulty": "medium",
-    "expected_answer_contains": ["96", "81", "growth"],
+    "expected_answer_contains": ["81,462", "96,773", "18.80"],
     "required_periods": ["2022-12-31", "2023-12-31"],
     "required_concepts": ["us-gaap:Revenues"]
   },
@@ -61,5 +61,23 @@
     "expected_answer_contains": ["free cash flow", "capital expenditure"],
     "required_periods": ["2023-12-31"],
     "required_concepts": ["custom:FreeCashFlow", "custom:CapitalExpenditure"]
+  },
+  {
+    "question_id": "BQ-008",
+    "question": "What was Tesla's total revenue in FY2023?",
+    "category": "cross_year",
+    "difficulty": "easy",
+    "expected_answer_contains": ["96,773,000,000.00", "result"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["us-gaap:Revenues"]
+  },
+  {
+    "question_id": "BQ-009",
+    "question": "What was Tesla's free cash flow in FY2023?",
+    "category": "calculation",
+    "difficulty": "easy",
+    "expected_answer_contains": ["free cash flow", "4,358,000,000.00"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["custom:FreeCashFlow"]
   }
 ]

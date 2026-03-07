@@ -103,7 +103,7 @@ class FilingDocument(BaseModel):
     fiscal_year: int
     fiscal_quarter: int | None = Field(
         None,
-        description="1-4 for quarterly filings; None for annual.",
+        description="1-3 for quarterly filings; None for annual.",
     )
     accession_number: str = Field(description="SEC EDGAR accession number.")
     filed_at: date

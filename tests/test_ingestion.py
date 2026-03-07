@@ -356,6 +356,36 @@ class TestNarrativeParsing:
         content_text = "Item 2. MANAGEMENT'S DISCUSSION\nSome analysis text here..."
         assert _is_toc_page(content_text) is False
 
+    def test_detect_sections_splits_multiple_headers_on_same_page(self) -> None:
+        from tesla_finrag.ingestion.narrative import _detect_sections
+
+        pages = [
+            (
+                5,
+                "Item 1. Financial Statements\nBalance sheet text\n"
+                "Item 2. Management's Discussion\nMD&A text",
+            )
+        ]
+
+        sections = _detect_sections(pages)
+        assert [title for title, _, _ in sections] == [
+            "Item 1. Financial Statements",
+            "Item 2. Management's Discussion",
+        ]
+        assert "Balance sheet text" in sections[0][2]
+        assert "MD&A text" in sections[1][2]
+
+    def test_chunk_text_uses_overlap_and_respects_size(self) -> None:
+        from tesla_finrag.ingestion.narrative import _chunk_text
+
+        text = "Paragraph one. " * 40 + "\n\n" + "Paragraph two. " * 40
+        chunks = _chunk_text(text, max_tokens=20, overlap_tokens=5)
+
+        assert len(chunks) > 1
+        assert chunks[0][1] == 0
+        assert chunks[1][1] > 0
+        assert all(chunk_text.strip() for chunk_text, _ in chunks)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 3. Table extraction tests
@@ -413,6 +443,28 @@ class TestTableExtraction:
         assert headers == ["Header", "", "Value"]
         # The all-None row should be dropped.
         assert len(rows) == 1
+
+    def test_table_to_text_preserves_empty_cells(self) -> None:
+        from tesla_finrag.ingestion.tables import _table_to_text
+
+        text = _table_to_text(["Year", "Revenue", "Notes"], [["2023", "96773", ""]])
+
+        assert text.splitlines()[0] == "Year | Revenue | Notes"
+        assert text.splitlines()[1] == "2023 | 96773 | "
+
+    def test_extract_caption_uses_table_index(self) -> None:
+        from tesla_finrag.ingestion.tables import _extract_caption
+
+        page_text = "\n".join(
+            [
+                "Consolidated Balance Sheets",
+                "Some spacing",
+                "Consolidated Statements of Operations",
+            ]
+        )
+
+        assert _extract_caption(page_text, 0) == "Consolidated Balance Sheets"
+        assert _extract_caption(page_text, 1) == "Consolidated Statements of Operations"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -604,3 +656,31 @@ class TestWriters:
 
         assert "processed" in str(_DEFAULT_OUTPUT_DIR)
         assert "raw" not in str(_DEFAULT_OUTPUT_DIR)
+
+
+class TestPipeline:
+    def test_resolve_source_pdf_path_handles_repo_relative_sources(self, raw_dir: Path) -> None:
+        from tesla_finrag.ingestion.pipeline import _resolve_source_pdf_path
+
+        path = _resolve_source_pdf_path(raw_dir, "data/raw/Tesla_2023_Q1_10-Q.pdf")
+
+        assert path == raw_dir / "Tesla_2023_Q1_10-Q.pdf"
+
+    def test_run_pipeline_continues_after_parse_failure(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def boom(*args: object, **kwargs: object) -> list[SectionChunk]:
+            raise ValueError("broken pdf")
+
+        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.parse_narrative", boom)
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.extract_tables",
+            lambda *args, **kwargs: [],
+        )
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed")
+
+        assert summary["filings"] == 3
+        assert summary["section_chunks"] == 0

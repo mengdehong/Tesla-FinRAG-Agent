@@ -174,6 +174,12 @@ class GroundedAnswerComposer(AnswerService):
 
         return result, all_trace
 
+    @staticmethod
+    def _required_fact_matches(plan: QueryPlan, bundle: EvidenceBundle) -> set[str]:
+        if not plan.required_concepts:
+            return set()
+        return {fact.concept for fact in bundle.facts if fact.concept in plan.required_concepts}
+
     def _build_citations(self, bundle: EvidenceBundle) -> list[Citation]:
         """Build citation objects from the evidence bundle."""
         citations: list[Citation] = []
@@ -234,9 +240,7 @@ class GroundedAnswerComposer(AnswerService):
                 "The available filing data may not contain the relevant information."
             )
         if plan.needs_calculation and plan.required_concepts:
-            matching_concepts = {
-                fact.concept for fact in bundle.facts if fact.concept in plan.required_concepts
-            }
+            matching_concepts = self._required_fact_matches(plan, bundle)
             if not matching_concepts:
                 return (
                     "Insufficient evidence found to answer this question. "
@@ -296,9 +300,7 @@ class GroundedAnswerComposer(AnswerService):
         if total_evidence == 0:
             return AnswerStatus.INSUFFICIENT_EVIDENCE, 0.0
         if plan.needs_calculation and plan.required_concepts:
-            matching_concepts = {
-                fact.concept for fact in bundle.facts if fact.concept in plan.required_concepts
-            }
+            matching_concepts = self._required_fact_matches(plan, bundle)
             if not matching_concepts:
                 return AnswerStatus.INSUFFICIENT_EVIDENCE, 0.0
 
@@ -308,9 +310,7 @@ class GroundedAnswerComposer(AnswerService):
         # Boost if we have matching facts for a numeric question
         if plan.needs_calculation:
             if bundle.facts:
-                matching_concepts = sum(
-                    1 for f in bundle.facts if f.concept in plan.required_concepts
-                )
+                matching_concepts = len(self._required_fact_matches(plan, bundle))
                 if matching_concepts > 0:
                     confidence = min(confidence + 0.2, 1.0)
                 else:

@@ -66,13 +66,15 @@ def _make_filing(
     fiscal_quarter: int | None,
     source: str,
 ) -> FilingDocument:
+    filed_year = period_end.year + 1 if period_end.month == 12 else period_end.year
+    filed_month = 1 if period_end.month == 12 else period_end.month + 1
     return FilingDocument(
         filing_type=form,
         period_end=period_end,
         fiscal_year=fiscal_year,
         fiscal_quarter=fiscal_quarter,
         accession_number=f"0000950170-{fiscal_year}-{str(period_end.month).zfill(2)}",
-        filed_at=date(period_end.year, period_end.month + 1 if period_end.month < 12 else 1, 15),
+        filed_at=date(filed_year, filed_month, 15),
         source_path=source,
     )
 

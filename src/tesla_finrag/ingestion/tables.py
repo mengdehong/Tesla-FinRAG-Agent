@@ -64,9 +64,9 @@ def _table_to_text(headers: list[str], rows: list[list[str]]) -> str:
     """Serialize a table into a pipe-delimited text block for embedding."""
     lines: list[str] = []
     if headers:
-        lines.append(" | ".join(h for h in headers if h))
+        lines.append(" | ".join(headers))
     for row in rows:
-        lines.append(" | ".join(c for c in row if c))
+        lines.append(" | ".join(row))
     return "\n".join(lines)
 
 
@@ -171,9 +171,13 @@ def _extract_caption(page_text: str, table_idx: int) -> str:
         r"Schedule\s+of\s+",
         r"Summary\s+of\s+",
     ]
+    matches: list[str] = []
     for line in page_text.split("\n"):
         stripped = line.strip()
         for pat in caption_patterns:
             if re.search(pat, stripped, re.IGNORECASE):
-                return stripped
-    return ""
+                matches.append(stripped)
+                break
+    if not matches:
+        return ""
+    return matches[min(table_idx, len(matches) - 1)]

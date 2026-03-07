@@ -78,31 +78,30 @@ def _detect_sections(pages: list[tuple[int, str]]) -> list[tuple[str, int, str]]
             # appear again when actual content begins.
             continue
 
-        # Check for an ITEM header at the start of a line.
         lines = text.split("\n")
-        found_header = False
-        for line_idx, line in enumerate(lines):
+        page_buffer: list[str] = []
+        for line in lines:
             stripped = line.strip()
             m = _ITEM_RE.match(stripped)
             if m:
-                # Save current section.
+                buffered_text = "\n".join(page_buffer).strip()
+                if buffered_text:
+                    current_texts.append(buffered_text)
                 if current_texts:
                     sections.append((current_title, current_start_page, current_texts))
                 item_num = m.group(1)
                 item_label = m.group(2).strip().rstrip(".")
-                # Strip trailing page numbers from TOC-style labels (e.g. "Financial Statements 4").
                 item_label = re.sub(r"\s+\d+\s*$", "", item_label)
                 current_title = f"Item {item_num}" + (f". {item_label}" if item_label else "")
                 current_start_page = page_num
                 current_texts = []
-                # Include text from this header line onward.
-                page_text = "\n".join(lines[line_idx:])
-                current_texts.append(page_text)
-                found_header = True
-                break
-        if not found_header:
-            # No ITEM header found — append entire page to current section.
-            current_texts.append(text)
+                page_buffer = [line]
+                continue
+            page_buffer.append(line)
+
+        buffered_text = "\n".join(page_buffer).strip()
+        if buffered_text:
+            current_texts.append(buffered_text)
 
     # Flush last section.
     if current_texts:

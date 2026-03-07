@@ -1,0 +1,65 @@
+[
+  {
+    "question_id": "BQ-001",
+    "question": "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?",
+    "category": "cross_year",
+    "difficulty": "medium",
+    "expected_answer_contains": ["96", "81", "growth"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:Revenues"]
+  },
+  {
+    "question_id": "BQ-002",
+    "question": "What was Tesla's gross profit margin for FY2023? Show how gross profit divided by total revenue produces the margin percentage.",
+    "category": "calculation",
+    "difficulty": "medium",
+    "expected_answer_contains": ["gross profit", "margin"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["us-gaap:GrossProfit", "us-gaap:Revenues"]
+  },
+  {
+    "question_id": "BQ-003",
+    "question": "What supply chain risk factors did Tesla mention in its 2023 10-K, and how did cost of automotive revenue change between FY2022 and FY2023?",
+    "category": "text_plus_table",
+    "difficulty": "hard",
+    "expected_answer_contains": ["supply chain", "cost"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CostOfGoodsAndServicesSold"]
+  },
+  {
+    "question_id": "BQ-004",
+    "question": "How did Tesla's research and development expenses change from FY2021 through FY2024? Identify the trend direction.",
+    "category": "time_sequenced",
+    "difficulty": "hard",
+    "expected_answer_contains": ["research", "development"],
+    "required_periods": ["2021-12-31", "2022-12-31", "2023-12-31", "2024-12-31"],
+    "required_concepts": ["us-gaap:ResearchAndDevelopmentExpense"]
+  },
+  {
+    "question_id": "BQ-005",
+    "question": "Compare Tesla's operating income across Q1 2023, Q2 2023, and Q3 2023. Which quarter had the highest operating margin?",
+    "category": "multi_period",
+    "difficulty": "hard",
+    "expected_answer_contains": ["operating income", "quarter"],
+    "required_periods": ["2023-03-31", "2023-06-30", "2023-09-30"],
+    "required_concepts": ["us-gaap:OperatingIncomeLoss"]
+  },
+  {
+    "question_id": "BQ-006",
+    "question": "What was Tesla's cash and cash equivalents position as of December 31, 2023, and how did it compare to December 31, 2022?",
+    "category": "balance_sheet",
+    "difficulty": "medium",
+    "expected_answer_contains": ["cash"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
+  },
+  {
+    "question_id": "BQ-007",
+    "question": "Calculate Tesla's free cash flow for FY2023 by subtracting capital expenditures from operating cash flow. Show each step.",
+    "category": "calculation",
+    "difficulty": "hard",
+    "expected_answer_contains": ["free cash flow", "capital expenditure"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["custom:FreeCashFlow", "custom:CapitalExpenditure"]
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "case_id": "FA-001",
+    "question_id": "BQ-001",
+    "question": "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?",
+    "expected_answer": "Total revenue grew from $81.46B (FY2022) to $96.77B (FY2023), a YoY increase of approximately 18.8%.",
+    "actual_answer": "Tesla's total revenue in FY2023 was $96.77 billion. The company reported strong growth in its automotive segment.",
+    "symptom": "Answer references only FY2023 data; FY2022 figure and YoY calculation are missing.",
+    "retrieval_breakdown": "Vector search returned only FY2023 MD&A chunks. FY2022 revenue chunks ranked below the top-k cutoff because the embedding distance between the query ('compare FY2022 and FY2023') and the FY2022 section was larger than expected.",
+    "root_cause": "Period filter was not applied before retrieval fusion. The RRF step dilutes temporally relevant results when both years are not explicitly boosted. The system retrieved evidence for one period instead of both.",
+    "mitigation": "Apply explicit period filtering before fusion: retrieve separately per required_period from the QueryPlan, then merge. Alternatively, decompose cross-period questions into sub-questions, one per period.",
+    "severity": "major"
+  },
+  {
+    "case_id": "FA-002",
+    "question_id": "BQ-002",
+    "question": "What was Tesla's gross profit margin for FY2023?",
+    "expected_answer": "Gross profit was $17.66B on revenue of $96.77B, producing a gross margin of approximately 18.2%.",
+    "actual_answer": "Tesla's gross profit margin for FY2023 was approximately 70.3%, calculated as gross profit of $17.66B divided by automotive revenue of $25.12B.",
+    "symptom": "Reported gross margin is 70.3% instead of the correct ~18.2%. The denominator is wrong.",
+    "retrieval_breakdown": "Fact retrieval returned the correct us-gaap:GrossProfit fact ($17.66B). However, the concept matching for 'revenue' matched custom:AutomotiveRevenue ($25.12B for a single quarter) instead of us-gaap:Revenues ($96.77B annual).",
+    "root_cause": "Concept matching uses substring lookup: 'revenue' matches both 'us-gaap:Revenues' and 'custom:AutomotiveRevenue'. The shorter-alias match was returned first. Additionally, the quarterly automotive figure was selected instead of the annual total.",
+    "mitigation": "Use exact concept matching for calculation inputs when the QueryPlan specifies explicit concepts. Add period-alignment validation to ensure numerator and denominator cover the same fiscal period. Prefer us-gaap namespace concepts over custom ones for standard metrics.",
+    "severity": "critical"
+  },
+  {
+    "case_id": "FA-003",
+    "question_id": "BQ-003",
+    "question": "What supply chain risk factors did Tesla mention in its 2023 10-K, and how did cost of automotive revenue change between FY2022 and FY2023?",
+    "expected_answer": "Tesla's 2023 10-K mentions supply chain risks including semiconductor shortages, raw material price volatility, and logistics disruptions. Cost of automotive revenue increased from $49.57B (FY2022) to $65.12B (FY2023).",
+    "actual_answer": "Tesla mentioned supply chain challenges in its 2023 10-K. The cost of revenue was $51,6I8 million in FY2023.",
+    "symptom": "Cost figure is garbled ('$51,6I8' instead of a valid number). The answer merges risk factor narrative with an incorrectly parsed table value.",
+    "retrieval_breakdown": "The risk factors section chunk was retrieved correctly. The table chunk for cost of revenue contained OCR artifacts from PDF extraction — the digit '1' was misrecognized as 'I' and column alignment was corrupted.",
+    "root_cause": "PDF table extraction (pdfplumber) produced OCR-like errors on the scanned filing page. No post-processing validation step checks whether extracted numeric cells parse as valid numbers.",
+    "mitigation": "Add a numeric validation pass after table extraction that flags cells failing float() conversion. Cross-check table-extracted values against XBRL FactRecord entries for the same concept and period. Prefer XBRL facts over table-parsed values when both are available.",
+    "severity": "major"
+  },
+  {
+    "case_id": "FA-004",
+    "question_id": "BQ-005",
+    "question": "Compare Tesla's operating income across Q1 2023, Q2 2023, and Q3 2023. Which quarter had the highest operating margin?",
+    "expected_answer": "Q1 2023 operating income was ~$2.66B, Q2 was ~$2.40B, Q3 was ~$1.76B. Q1 had the highest operating margin at approximately 11.4%.",
+    "actual_answer": "Tesla's operating income for Q4 2023 was $2.06B, with a full-year operating income of $8.89B. Q1 had operating income of $2.66B.",
+    "symptom": "Answer includes Q4 and FY figures that were not asked for. Only Q1 is answered correctly; Q2 and Q3 figures are missing.",
+    "retrieval_breakdown": "The 10-K reports cumulative FY figures, not Q4 standalone. The system retrieved the FY operating income from the 10-K and labeled it as Q4. Q2 and Q3 10-Q chunks were not retrieved because the query plan did not decompose the multi-quarter question into per-quarter sub-queries.",
+    "root_cause": "No logic exists to derive Q4 standalone figures by subtracting Q1+Q2+Q3 from the FY total. The query planner creates a single retrieval pass for all three quarters instead of separate sub-queries. The 10-K's FY cumulative figure is confused with a Q4 standalone figure.",
+    "mitigation": "Decompose multi-quarter questions into one sub-query per quarter. Add derived-period calculation logic that computes Q4 = FY - Q1 - Q2 - Q3. Flag answers that mix cumulative and standalone period types.",
+    "severity": "critical"
+  },
+  {
+    "case_id": "FA-005",
+    "question_id": "BQ-007",
+    "question": "Calculate Tesla's free cash flow for FY2023 by subtracting capital expenditures from operating cash flow. Show each step.",
+    "expected_answer": "Operating cash flow FY2023: $13.26B. Capital expenditures FY2023: $8.88B. Free cash flow = $13.26B - $8.88B = $4.38B.",
+    "actual_answer": "Tesla's free cash flow for FY2023 was approximately $4.36 billion, reflecting strong operational performance.",
+    "symptom": "The FCF number ($4.36B) is plausible but not grounded in cited evidence. No calculation steps are shown, and no source citations are provided. The figure appears to come from the language model's training data rather than from retrieved filings.",
+    "retrieval_breakdown": "No XBRL concept for 'custom:FreeCashFlow' exists in the fact store. The cash flow statement chunk was not retrieved because the lexical query 'free cash flow' does not match the section title 'Consolidated Statements of Cash Flows'. The evidence bundle was empty.",
+    "root_cause": "When the evidence bundle contains no relevant facts or chunks, the LLM answer generator falls back to parametric knowledge instead of returning INSUFFICIENT_EVIDENCE status. There is no enforcement of the grounding requirement.",
+    "mitigation": "Enforce a minimum evidence threshold: if the evidence bundle has no facts and no chunks with retrieval score above a confidence floor, return AnswerStatus.INSUFFICIENT_EVIDENCE instead of generating a free-text answer. Add a section-title alias mapping so 'cash flow statement' matches 'Consolidated Statements of Cash Flows'.",
+    "severity": "critical"
+  }
+]

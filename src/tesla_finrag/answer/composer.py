@@ -233,6 +233,16 @@ class GroundedAnswerComposer(AnswerService):
                 "Insufficient evidence found to answer this question. "
                 "The available filing data may not contain the relevant information."
             )
+        if plan.needs_calculation and plan.required_concepts:
+            matching_concepts = {
+                fact.concept for fact in bundle.facts if fact.concept in plan.required_concepts
+            }
+            if not matching_concepts:
+                return (
+                    "Insufficient evidence found to answer this question. "
+                    "The available filing data did not contain grounded numeric facts "
+                    "for the requested metric."
+                )
 
         parts: list[str] = []
 
@@ -285,6 +295,12 @@ class GroundedAnswerComposer(AnswerService):
 
         if total_evidence == 0:
             return AnswerStatus.INSUFFICIENT_EVIDENCE, 0.0
+        if plan.needs_calculation and plan.required_concepts:
+            matching_concepts = {
+                fact.concept for fact in bundle.facts if fact.concept in plan.required_concepts
+            }
+            if not matching_concepts:
+                return AnswerStatus.INSUFFICIENT_EVIDENCE, 0.0
 
         # Base confidence from evidence quantity
         confidence = min(total_evidence / 5.0, 1.0)

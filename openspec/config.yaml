@@ -1,20 +1,32 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Project: Tesla FinRAG interview project for multi-year Tesla 10-K and 10-Q question answering.
+  Goal: Answer cross-year, multi-document, calculation-heavy financial questions with grounded citations and failure analysis.
+  Primary stack: Python 3.12, uv, Streamlit, Pydantic, httpx, pytest, ruff.
+  Data strategy: Use SEC filings HTML/PDF plus SEC XBRL/companyfacts as a dual-track knowledge base.
+  Numeric facts: Prefer XBRL/companyfacts as the authority for core financial numbers.
+  Narrative evidence: Use filing HTML/PDF for management discussion, contextual text, table provenance, and citations.
+  Retrieval defaults: Structure-first chunking, hybrid keyword plus vector retrieval, metadata filtering, and a repository abstraction around the storage layer.
+  Storage default: Prefer LanceDB for local-first hybrid retrieval unless a change justifies another backend.
+  Architecture default: Prefer typed Python service modules with explicit query planning and calculation steps over heavy generic agent frameworks.
+  Delivery preference: Optimize for explainability, debuggability, and demo-ready output while preserving room for later expansion.
+  Reference docs: docs/PROJECT.md, docs/DECISION.md, docs/research/01-ProjectInitResearch.md, docs/DEVELOPMENT_PREFERENCES.md.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Focus on the user problem, scope, and capability boundaries for the Tesla FinRAG domain.
+    - Do not turn proposal.md into an implementation plan; keep detailed stack and orchestration choices in design.md unless they change scope.
+    - When relevant, state how the change affects retrieval quality, grounded citations, evaluation, or the Streamlit demo flow.
+  design:
+    - Reuse the repository's default stack and architecture unless the change explicitly requires a justified deviation.
+    - Explain how the design fits the SEC narrative plus XBRL dual-track data model and the explicit retrieve-calculate-answer pipeline.
+    - Compare alternatives when introducing new parsing, storage, retrieval, or model orchestration decisions.
+  specs:
+    - Write user-visible or operator-visible requirements that are testable with explicit scenarios.
+    - Include time-period handling, citation grounding, and failure behavior when those concerns affect the capability.
+    - Avoid describing internal code structure as the requirement unless it creates externally observable behavior.
+  tasks:
+    - Break work into small, ordered, verifiable tasks that can be completed in one session.
+    - Include validation tasks whenever a change touches parsing, retrieval, evaluation, or UI behavior.
+    - Prefer tasks that preserve the repository's typed service-layer structure and traceable data flow.

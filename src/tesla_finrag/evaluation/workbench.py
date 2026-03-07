@@ -1,13 +1,12 @@
 """Shared workbench pipeline for the Streamlit demo and evaluation runner.
 
-This module wires the real planning -> retrieval -> answer pipeline over a
-small in-memory Tesla demo corpus. It is intentionally deterministic so local
-demo runs and evaluation runs are reproducible.
+This module wires the real planning -> retrieval -> answer pipeline over the
+processed Tesla corpus loaded from ``data/processed/``.
 
 The pipeline now supports two provider modes:
 - ``local`` (default): deterministic template-based answers, no network calls.
 - ``openai-compatible``: uses the OpenAI SDK for embeddings and grounded chat
-  narration over the same demo corpus.
+  narration over the same processed corpus.
 """
 
 from __future__ import annotations
@@ -320,7 +319,7 @@ def _chunk_text(chunk: SectionChunk | TableChunk) -> str:
 
 
 class WorkbenchPipeline:
-    """Reusable plan -> retrieve -> answer pipeline over the demo corpus.
+    """Reusable plan -> retrieve -> answer pipeline over the processed corpus.
 
     Supports ``local`` (default) and ``openai-compatible`` provider modes.
     """
@@ -591,10 +590,16 @@ def get_workbench_pipeline(
 ) -> WorkbenchPipeline:
     """Create a workbench pipeline with the given provider mode.
 
+    Loads the processed corpus from ``data/processed/``.  Raises
+    :class:`~tesla_finrag.runtime.ProcessedCorpusError` when artifacts are
+    missing or invalid.
+
     For ``openai-compatible`` mode, the provider is constructed from
     :func:`~tesla_finrag.settings.get_settings`.
     """
-    corpus_repo, facts_repo = _seed_demo_repositories()
+    from tesla_finrag.runtime import load_processed_corpus
+
+    corpus_repo, facts_repo = load_processed_corpus()
 
     provider = None
     if provider_mode == ProviderMode.OPENAI_COMPATIBLE:

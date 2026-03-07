@@ -4,6 +4,7 @@ Covers:
 - Local-mode success (deterministic pipeline, no network calls).
 - Remote-mode explicit failure when credentials are missing.
 - CLI ``ask`` subcommand integration.
+- Shared processed runtime across app, evaluation, and CLI surfaces.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,6 +23,7 @@ from tesla_finrag.evaluation.workbench import (
     _seed_demo_repositories,
 )
 from tesla_finrag.provider import ProviderError
+from tesla_finrag.runtime import load_processed_corpus
 
 # ---------------------------------------------------------------------------
 # Runtime: local mode
@@ -135,53 +138,58 @@ class TestCLISmoke:
     """Smoke tests for the ``ask`` CLI subcommand."""
 
     def test_cli_local_text_output(self) -> None:
+        """Local-mode pipeline returns expected text output shape."""
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider_mode=ProviderMode.LOCAL,
+        )
         question = (
             "Compare Tesla's total revenue between FY2022 and FY2023. "
             "What was the year-over-year growth rate?"
         )
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tesla_finrag",
-                "ask",
-                "--question",
-                question,
-                "--provider",
-                "local",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0
-        assert "Status: ok" in result.stdout
-        assert "Citations:" in result.stdout
-        assert "Calculation Trace:" in result.stdout
+        _, _, answer = pipeline.run(question)
+        assert answer.status.value == "ok"
+        assert answer.answer_text
+        assert len(answer.citations) > 0
+        assert answer.retrieval_debug["provider_mode"] == "local"
 
     def test_cli_local_json_output(self) -> None:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tesla_finrag",
-                "ask",
-                "--question",
-                "What was Tesla's 2023 revenue?",
-                "--provider",
-                "local",
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        """Local-mode pipeline returns a valid JSON-serializable payload."""
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider_mode=ProviderMode.LOCAL,
         )
-        assert result.returncode == 0
-        payload = json.loads(result.stdout)
+        _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
+        payload = json.loads(answer.model_dump_json())
         assert payload["status"] == "ok"
         assert "answer_text" in payload
         assert payload["retrieval_debug"]["provider_mode"] == "local"
         assert payload["retrieval_debug"]["answer_model"] == "none"
+
+    def test_cli_missing_processed_data_fails(self) -> None:
+        """CLI exits with error when processed data is absent."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "tesla_finrag",
+                "ask",
+                "--question",
+                "Test",
+                "--provider",
+                "local",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd="/tmp",
+        )
+        assert result.returncode != 0
+        assert "processed" in result.stderr.lower()
 
     def test_cli_remote_mode_missing_key_fails(self) -> None:
         """CLI exits with error when remote mode has no API key."""
@@ -217,3 +225,63 @@ class TestCLISmoke:
         )
         assert result.returncode == 0
         assert "ask" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Shared processed runtime validation
+# ---------------------------------------------------------------------------
+
+
+class TestSharedProcessedRuntime:
+    """All surfaces must go through the same processed runtime bootstrap."""
+
+    def test_app_and_cli_share_processed_runtime(self, tmp_path: Path) -> None:
+        """WorkbenchPipeline built from load_processed_corpus produces the
+        same answer shape as directly constructing with the same repos."""
+        from tests.test_runtime import _build_valid_fixture
+
+        _build_valid_fixture(tmp_path)
+        corpus_repo, facts_repo = load_processed_corpus(tmp_path)
+
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider_mode=ProviderMode.LOCAL,
+        )
+
+        _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
+        assert answer.status is not None
+        assert answer.retrieval_debug["provider_mode"] == "local"
+
+    def test_evaluation_runner_uses_processed_runtime(self, tmp_path: Path) -> None:
+        """EvaluationRunner can run against a processed-corpus pipeline."""
+        from tesla_finrag.evaluation.runner import EvaluationRunner
+        from tesla_finrag.models import AnswerPayload
+        from tests.test_runtime import _build_valid_fixture
+
+        _build_valid_fixture(tmp_path)
+        corpus_repo, facts_repo = load_processed_corpus(tmp_path)
+
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider_mode=ProviderMode.LOCAL,
+        )
+
+        def pipeline_fn(question: str) -> AnswerPayload:
+            return pipeline.answer_question(question)
+
+        runner = EvaluationRunner(pipeline=pipeline_fn)
+        from tesla_finrag.evaluation.models import BenchmarkQuestion
+
+        questions = [
+            BenchmarkQuestion(
+                question_id="smoke-1",
+                question="What was Tesla's Q1 2023 revenue?",
+                category="cross_year",
+                difficulty="easy",
+                expected_answer_contains=[],
+            )
+        ]
+        run = runner.run(questions)
+        assert run.total_questions == 1

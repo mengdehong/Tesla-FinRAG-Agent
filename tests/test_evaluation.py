@@ -28,7 +28,11 @@ from tesla_finrag.evaluation.runner import (
     load_benchmark_questions,
     load_failure_analyses,
 )
-from tesla_finrag.evaluation.workbench import FilingScope, get_workbench_pipeline
+from tesla_finrag.evaluation.workbench import (
+    FilingScope,
+    WorkbenchPipeline,
+    _seed_demo_repositories,
+)
 from tesla_finrag.models import (
     AnswerPayload,
     AnswerStatus,
@@ -321,7 +325,8 @@ class TestDemoResponseContract:
     """Verify the demo pipeline returns objects matching the UI contract."""
 
     def test_workbench_scope_filters_results(self) -> None:
-        pipeline = get_workbench_pipeline()
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(corpus_repo=corpus_repo, facts_repo=facts_repo)
         question = "What was Tesla's total revenue in FY2023?"
 
         _, _, answer_2023 = pipeline.run(
@@ -417,7 +422,8 @@ class TestDemoResponseContract:
 
 class TestWorkbenchHelpers:
     def test_filing_scope_matches_selected_quarters_only(self) -> None:
-        pipeline = get_workbench_pipeline()
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(corpus_repo=corpus_repo, facts_repo=facts_repo)
         quarterly_filing = next(
             filing
             for filing in pipeline._corpus_repo.list_filings()

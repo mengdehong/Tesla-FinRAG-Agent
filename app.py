@@ -45,7 +45,7 @@ try:
     pipeline = get_workbench_pipeline(provider_mode=ProviderMode(selected_provider))
 except Exception as exc:  # pragma: no cover - exercised in the UI
     st.title("Tesla FinRAG Evaluation Workbench")
-    st.error(f"Unable to initialize the selected demo pipeline: {exc}")
+    st.error(f"Unable to initialize the pipeline: {exc}")
     st.stop()
 
 available_years = pipeline.available_years

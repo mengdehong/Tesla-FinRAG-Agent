@@ -55,6 +55,7 @@ def _run_ask(args: argparse.Namespace) -> int:
     """Execute the ``ask`` subcommand."""
     from tesla_finrag.evaluation.workbench import ProviderMode, get_workbench_pipeline
     from tesla_finrag.provider import ProviderError
+    from tesla_finrag.runtime import ProcessedCorpusError
 
     try:
         provider_mode = ProviderMode(args.provider)
@@ -70,6 +71,9 @@ def _run_ask(args: argparse.Namespace) -> int:
         # Clear the cache so provider_mode takes effect
         get_workbench_pipeline.cache_clear()
         pipeline = get_workbench_pipeline(provider_mode=provider_mode)
+    except ProcessedCorpusError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     except ProviderError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -106,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ── ask subcommand ────────────────────────────────────────────────────────
     ask_parser = subparsers.add_parser(
         "ask",
-        help="Ask a question against the demo corpus.",
+        help="Ask a question against the processed corpus.",
     )
     ask_parser.add_argument(
         "--question",

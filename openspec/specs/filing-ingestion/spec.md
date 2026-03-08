@@ -11,15 +11,15 @@ The ingestion system SHALL enumerate the target Tesla filing corpus, record sour
 - **THEN** the system records that filing as a manifest gap with enough identity information for follow-up retrieval
 
 ### Requirement: Narrative and table normalization
-The ingestion system SHALL normalize narrative sections and tables from filing sources into independent chunk records with source metadata that supports later citations and metadata filtering.
+The ingestion system SHALL normalize narrative sections and tables from filing sources into independent chunk records with source metadata that supports later citations and metadata filtering. For each normalized narrative or table artifact, the system SHALL retain parser provenance, extraction-path metadata, and any available validation status needed to explain how the artifact was produced.
 
 #### Scenario: Normalize a filing section
 - **WHEN** the system ingests a filing section such as MD&A or Risk Factors
-- **THEN** it emits a narrative chunk with the section path, source document identity, and time metadata
+- **THEN** it emits a narrative chunk with the section path, source document identity, time metadata, and parser provenance sufficient for later debugging
 
 #### Scenario: Preserve a table as its own unit
 - **WHEN** the system encounters a financial or operational table in a filing
-- **THEN** it emits the table as a standalone chunk instead of merging it into surrounding narrative text
+- **THEN** it emits the table as a standalone chunk instead of merging it into surrounding narrative text, and preserves the caption, page provenance, parser path, and validation metadata needed for later citation review
 
 ### Requirement: Structured fact normalization
 The ingestion system SHALL normalize XBRL/companyfacts data into typed fact records aligned by metric, unit, filing source, and `period_key` so later calculation steps do not depend on raw PDF extraction.
@@ -50,15 +50,31 @@ The ingestion CLI SHALL report a concise completion summary that includes the pr
 - **THEN** the operator can see what processed artifacts were generated, whether the LanceDB index was built or refreshed, and whether any expected filings were missing
 
 ### Requirement: Persistent LanceDB retrieval index generation
-The ingestion system SHALL build and refresh a LanceDB retrieval index under the processed-corpus output root using the normalized section and table chunks generated for the filing corpus.
+The ingestion system SHALL build and refresh a LanceDB retrieval index under the
+processed-corpus output root using vector rows derived from the normalized
+section and table chunks generated for the filing corpus. When a normalized
+chunk exceeds the safe embedding input budget of the configured indexing
+backend, the system SHALL segment that chunk into multiple embedding-safe vector
+rows while preserving lineage back to the original processed chunk record.
 
 #### Scenario: Build the retrieval index during ingestion
-- **WHEN** an operator runs the supported ingestion CLI against a valid raw corpus
-- **THEN** the system writes or updates a LanceDB artifact under the processed output location that contains the chunk rows needed for runtime vector retrieval
+- **WHEN** an operator runs the supported ingestion CLI against a valid raw
+  corpus
+- **THEN** the system writes or updates a LanceDB artifact under the processed
+  output location that contains the vector rows needed for runtime semantic
+  retrieval
+
+#### Scenario: Segment an oversized chunk for indexing
+- **WHEN** a normalized section or table chunk is too large for the configured
+  embedding backend to accept as a single input
+- **THEN** the system writes multiple LanceDB rows for that chunk and records
+  source-chunk lineage metadata for each segment instead of failing immediately
 
 #### Scenario: Refresh stale retrieval rows on re-ingest
-- **WHEN** ingestion reprocesses filings whose normalized chunks changed since the previous run
-- **THEN** the system updates the corresponding LanceDB rows so runtime retrieval uses the latest processed chunk content
+- **WHEN** ingestion reprocesses filings whose normalized chunks changed since
+  the previous run
+- **THEN** the system updates the corresponding LanceDB rows so runtime
+  retrieval uses the latest processed chunk content and segment lineage
 
 ### Requirement: Incremental ingestion reuse
 The ingestion system SHALL detect unchanged filing sources and unchanged `companyfacts` input across runs and reuse their existing processed artifacts instead of reparsing them from scratch.
@@ -85,3 +101,39 @@ The ingestion CLI SHALL report how many filings were reprocessed, reused, and fa
 #### Scenario: Review a cold run
 - **WHEN** an ingestion run completes without any reusable prior state
 - **THEN** the completion summary reports zero reused filings and reflects that the available filings were fully processed
+
+### Requirement: Numeric table validation
+The ingestion system SHALL validate extracted financial table cells that appear numeric before treating the resulting table artifact as trusted structured evidence. When authoritative XBRL facts exist for the same concept and period, the ingestion system SHALL reconcile or flag material mismatches instead of silently trusting the parsed table value.
+
+#### Scenario: Accept a valid extracted numeric cell
+- **WHEN** an extracted table cell can be normalized as a numeric value and does not materially conflict with an authoritative fact for the same concept and period
+- **THEN** the system records the normalized value as validated table evidence for downstream retrieval and citations
+
+#### Scenario: Flag a malformed or conflicting numeric cell
+- **WHEN** an extracted table cell cannot be normalized as a numeric value or materially conflicts with an authoritative fact after unit and scale alignment
+- **THEN** the system marks the affected table output as validation-failed and records a source-aware diagnostic instead of silently treating the value as trusted evidence
+
+### Requirement: Source-aware parser diagnostics
+The ingestion system SHALL record which parser path produced each normalized filing artifact and SHALL surface actionable diagnostics when extraction fails or falls back to a lower-confidence parser path.
+
+#### Scenario: Fall back from the primary parser
+- **WHEN** the primary text or table extraction path fails or yields unusable structured output for a filing artifact
+- **THEN** the system records the fallback parser path together with the filing and page identity needed for operator review
+
+#### Scenario: Report an extraction failure
+- **WHEN** no supported parser path can produce valid normalized output for a required filing artifact
+- **THEN** the ingestion run reports the filing identity, artifact type, parser attempts, and remediation guidance in its diagnostics
+
+### Requirement: Operator-visible indexing failure diagnostics
+The ingestion system SHALL fail with explicit source-aware diagnostics when a
+normalized chunk still cannot be embedded after applying the supported
+segmentation safeguards.
+
+#### Scenario: Report an unindexable chunk
+- **WHEN** a normalized chunk remains too large or otherwise invalid for the
+  configured embedding backend after the ingestion system applies its indexing
+  segmentation strategy
+- **THEN** the ingestion command reports the chunk type, source filing identity,
+  processed artifact path, and the supported remediation step instead of only
+  surfacing a generic embedding backend error
+

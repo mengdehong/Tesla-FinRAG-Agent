@@ -4,12 +4,25 @@ Assembles a final :class:`AnswerPayload` from a query plan and
 evidence bundle, including citations, calculation steps, retrieval
 debug data, and confidence cues.
 
+When the required grounded evidence is missing, incomplete, or
+semantically incompatible with the requested question, the payload
+returns a limitation status with debug context explaining the reason.
+
 Implements :class:`AnswerService`.
 """
 
 from __future__ import annotations
 
-from tesla_finrag.calculation.calculator import CalcOp, StructuredCalculator
+from datetime import date
+from uuid import UUID
+
+from tesla_finrag.calculation.calculator import (
+    CalcOp,
+    PeriodIncompatibleError,
+    StructuredCalculator,
+    classify_fact_period,
+    derive_standalone_quarter,
+)
 from tesla_finrag.evidence.linker import EvidenceLinker
 from tesla_finrag.models import (
     AnswerPayload,
@@ -17,6 +30,7 @@ from tesla_finrag.models import (
     Citation,
     EvidenceBundle,
     FactRecord,
+    PeriodSemantics,
     QueryPlan,
     QueryType,
 )
@@ -56,10 +70,11 @@ class GroundedAnswerComposer(AnswerService):
 
         Steps:
         1. Enrich the evidence bundle via evidence linking.
-        2. If calculation is needed, run the calculator.
-        3. Build citations from the evidence.
-        4. Compose the answer text from evidence and calculations.
-        5. Compute confidence based on evidence quality.
+        2. Check evidence sufficiency — bail early if coverage is lacking.
+        3. If calculation is needed, run the calculator (handling incompatibility).
+        4. Build citations from the evidence.
+        5. Compose the answer text from evidence and calculations.
+        6. Compute confidence based on evidence quality.
 
         Args:
             plan: The structured query plan.
@@ -73,24 +88,84 @@ class GroundedAnswerComposer(AnswerService):
             bundle,
             required_concepts=plan.required_concepts,
             required_periods=plan.required_periods,
+            period_semantics=plan.period_semantics if plan.period_semantics else None,
         )
 
-        # Step 2: Calculate if needed
+        # Step 2: Check evidence sufficiency (per-period coverage)
+        limitation_reasons: list[str] = []
+        missing_periods = enriched.metadata.get("missing_periods", [])
+        missing_concepts_by_period = enriched.metadata.get("missing_concepts_by_period", {})
+        missing_narrative_periods: list[str] = []
+        if missing_periods:
+            missing_label = (
+                "facts" if plan.needs_calculation or plan.required_concepts else "evidence"
+            )
+            limitation_reasons.append(
+                f"Missing grounded {missing_label} for period(s): {', '.join(missing_periods)}"
+            )
+            for period_key, concepts in sorted(missing_concepts_by_period.items()):
+                if concepts:
+                    limitation_reasons.append(
+                        f"Missing required concept(s) for {period_key}: {', '.join(concepts)}"
+                    )
+        if not plan.needs_calculation and plan.required_periods:
+            missing_narrative_periods = self._missing_section_periods(
+                plan.required_periods,
+                enriched,
+                excluded_periods=set(missing_periods),
+            )
+            if missing_narrative_periods:
+                limitation_reasons.append(
+                    "Missing supporting narrative evidence for period(s): "
+                    f"{', '.join(missing_narrative_periods)}"
+                )
+
+        # Step 3: Calculate if needed
         calc_trace: list[str] = []
         calc_result: float | None = None
-        if plan.needs_calculation and enriched.facts:
-            calc_result, calc_trace = self._run_calculations(plan, enriched.facts)
+        period_incompatible = False
+        if plan.needs_calculation and enriched.facts and not limitation_reasons:
+            calc_facts, derivation_trace, derivation_errors = self._prepare_facts_for_calculation(
+                plan,
+                enriched.facts,
+            )
+            if derivation_errors:
+                limitation_reasons.extend(derivation_errors)
+                calc_trace = derivation_trace
+            try:
+                if not derivation_errors:
+                    calc_result, calc_trace = self._run_calculations(plan, calc_facts)
+                    calc_trace = derivation_trace + calc_trace
+            except PeriodIncompatibleError as exc:
+                period_incompatible = True
+                limitation_reasons.append(str(exc))
+                calc_trace = derivation_trace + [f"Period incompatibility: {exc}"]
+                if exc.details:
+                    limitation_reasons.append(
+                        f"Semantics: {exc.details.get('semantics_a', '?')} "
+                        f"vs {exc.details.get('semantics_b', '?')}"
+                    )
 
-        # Step 3: Build citations
+        # Step 4: Build citations
         citations = self._build_citations(enriched)
 
-        # Step 4: Compose answer text
-        answer_text = self._compose_text(plan, enriched, calc_result, calc_trace)
+        # Step 5: Compose answer text
+        if limitation_reasons:
+            answer_text = self._compose_limitation_text(limitation_reasons)
+        else:
+            answer_text = self._compose_text(plan, enriched, calc_result, calc_trace)
 
-        # Step 5: Determine status and confidence
-        status, confidence = self._assess_quality(enriched, plan)
+        # Step 6: Determine status and confidence
+        if limitation_reasons:
+            if period_incompatible:
+                status = AnswerStatus.CALCULATION_ERROR
+            else:
+                status = AnswerStatus.INSUFFICIENT_EVIDENCE
+            confidence = 0.0
+        else:
+            status, confidence = self._assess_quality(enriched, plan)
 
-        # Step 6: Build retrieval debug info (retained for logging/future use)
+        # Step 7: Build retrieval debug info with limitation reasons
         retrieval_debug = {
             "section_chunks_count": len(enriched.section_chunks),
             "table_chunks_count": len(enriched.table_chunks),
@@ -99,6 +174,11 @@ class GroundedAnswerComposer(AnswerService):
             "query_type": plan.query_type.value,
             "required_periods": [str(p) for p in plan.required_periods],
             "required_concepts": plan.required_concepts,
+            "period_semantics": plan.period_semantics,
+            "limitation_reasons": limitation_reasons,
+            "missing_periods": missing_periods,
+            "missing_concepts_by_period": missing_concepts_by_period,
+            "missing_narrative_periods": missing_narrative_periods,
             **enriched.metadata,
         }
 
@@ -134,6 +214,21 @@ class GroundedAnswerComposer(AnswerService):
                     facts, concept, periods[0], periods[1], as_percent=True
                 )
                 all_trace.extend(trace)
+            elif len(plan.required_periods) == 1:
+                # Explicit single-period lookup (avoid summing supporting facts)
+                target_period = plan.required_periods[0]
+                match = next(
+                    (f for f in facts if f.concept == concept and f.period_end == target_period),
+                    None,
+                )
+                if match:
+                    result = match.value * match.scale
+                    all_trace.append(
+                        f"{match.label}: {result:,.2f} {match.unit} "
+                        f"(period ending {match.period_end})"
+                    )
+                else:
+                    all_trace.append(f"Missing {concept} for required period {target_period}")
             elif len(plan.required_periods) >= 2:
                 # Multi-period ranking
                 result, trace = self._calculator.rank(facts, concept)
@@ -173,6 +268,165 @@ class GroundedAnswerComposer(AnswerService):
                         result = val
 
         return result, all_trace
+
+    def _prepare_facts_for_calculation(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+    ) -> tuple[list[FactRecord], list[str], list[str]]:
+        """Prepare facts for calculation, including required Q4 derivations.
+
+        If a required period is explicitly requested as standalone Q4,
+        but only cumulative FY data exists for a duration metric, derive Q4 using
+        ``Q4 = FY - Q1 - Q2 - Q3``.
+        """
+        if not plan.required_periods or not plan.required_concepts:
+            return list(facts), [], []
+
+        prepared = list(facts)
+        derivation_trace: list[str] = []
+        derivation_errors: list[str] = []
+
+        for concept in plan.required_concepts:
+            for period in plan.required_periods:
+                period_key = period.isoformat()
+                target_semantics = plan.period_semantics.get(period_key)
+                if target_semantics != PeriodSemantics.QUARTERLY_STANDALONE:
+                    continue
+                # Q4 standalone is represented by a 12/31 period end.
+                if period.month != 12 or period.day != 31:
+                    continue
+
+                existing = next(
+                    (f for f in prepared if f.concept == concept and f.period_end == period),
+                    None,
+                )
+                if existing and classify_fact_period(existing) in (
+                    PeriodSemantics.QUARTERLY_STANDALONE,
+                    PeriodSemantics.DERIVED_STANDALONE,
+                    PeriodSemantics.INSTANT,
+                ):
+                    continue
+                if self._concept_uses_instant_facts(concept, prepared):
+                    derivation_trace.append(
+                        "Skipping standalone Q4 derivation for instant metric "
+                        f"{concept} at {period}."
+                    )
+                    continue
+
+                supporting_facts = self._build_supporting_facts_for_q4_derivation(
+                    concept,
+                    period.year,
+                    prepared,
+                )
+                derived_value, trace = derive_standalone_quarter(
+                    concept,
+                    period.year,
+                    4,
+                    supporting_facts,
+                )
+                derivation_trace.extend(trace)
+
+                if derived_value is None:
+                    detail = trace[-1] if trace else "insufficient supporting facts"
+                    derivation_errors.append(
+                        f"Unable to derive standalone Q4 for {concept} at {period}: {detail}"
+                    )
+                    continue
+
+                base = next((f for f in supporting_facts if f.concept == concept), None)
+                doc_id = self._doc_id_for_period(period)
+                if base is None or doc_id is None:
+                    derivation_errors.append(
+                        f"Unable to derive standalone Q4 for {concept} at {period}: "
+                        "missing filing metadata"
+                    )
+                    continue
+
+                prepared = [
+                    f for f in prepared if not (f.concept == concept and f.period_end == period)
+                ]
+                prepared.append(
+                    FactRecord(
+                        doc_id=doc_id,
+                        concept=concept,
+                        label=f"{base.label} (derived Q4 standalone)",
+                        value=derived_value,
+                        unit=base.unit,
+                        scale=1,
+                        period_start=date(period.year, 10, 1),
+                        period_end=period,
+                        is_instant=False,
+                        source_chunk_id=base.source_chunk_id,
+                    )
+                )
+                derivation_trace.append(
+                    f"Using derived standalone Q4 value for {concept} at {period}."
+                )
+
+        return prepared, derivation_trace, derivation_errors
+
+    def _build_supporting_facts_for_q4_derivation(
+        self,
+        concept: str,
+        year: int,
+        facts: list[FactRecord],
+    ) -> list[FactRecord]:
+        """Collect FY/Q1/Q2/Q3 facts needed to derive standalone Q4."""
+        period_ends = [
+            date(year, 3, 31),
+            date(year, 6, 30),
+            date(year, 9, 30),
+            date(year, 12, 31),
+        ]
+        result = list(facts)
+        seen = {(f.concept, f.period_end, f.doc_id, f.fact_id) for f in result}
+        for period_end in period_ends:
+            for fact in self._facts.get_facts(concept=concept, period_end=period_end):
+                key = (fact.concept, fact.period_end, fact.doc_id, fact.fact_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                result.append(fact)
+        return result
+
+    def _doc_id_for_period(self, period_end: date) -> UUID | None:
+        """Find a filing doc_id for the given period end date."""
+        for filing in self._corpus.list_filings():
+            if filing.period_end == period_end:
+                return filing.doc_id
+        return None
+
+    def _concept_uses_instant_facts(
+        self,
+        concept: str,
+        facts: list[FactRecord],
+    ) -> bool:
+        """Return whether a concept behaves like an instant metric."""
+        relevant = [fact for fact in facts if fact.concept == concept]
+        if any(fact.is_instant for fact in relevant):
+            return True
+        return any(fact.is_instant for fact in self._facts.get_facts(concept=concept))
+
+    def _missing_section_periods(
+        self,
+        required_periods: list[date],
+        bundle: EvidenceBundle,
+        *,
+        excluded_periods: set[str] | None = None,
+    ) -> list[str]:
+        """Return required periods that lack narrative section evidence."""
+        excluded = excluded_periods or set()
+        covered_periods = {
+            filing.period_end.isoformat()
+            for chunk in bundle.section_chunks
+            if (filing := self._corpus.get_filing(chunk.doc_id)) is not None
+        }
+        return [
+            period.isoformat()
+            for period in required_periods
+            if period.isoformat() not in covered_periods and period.isoformat() not in excluded
+        ]
 
     @staticmethod
     def _required_fact_matches(plan: QueryPlan, bundle: EvidenceBundle) -> set[str]:
@@ -321,3 +575,17 @@ class GroundedAnswerComposer(AnswerService):
             confidence *= 0.3
 
         return AnswerStatus.OK, round(confidence, 2)
+
+    @staticmethod
+    def _compose_limitation_text(reasons: list[str]) -> str:
+        """Compose a user-facing limitation message from a list of reasons.
+
+        The text clearly states that the answer cannot be grounded and
+        enumerates each specific limitation so the caller can understand
+        what evidence was missing or incompatible.
+        """
+        header = "Unable to provide a fully grounded answer for this question."
+        if len(reasons) == 1:
+            return f"{header} {reasons[0]}"
+        bullet_lines = "\n".join(f"- {r}" for r in reasons)
+        return f"{header}\n{bullet_lines}"

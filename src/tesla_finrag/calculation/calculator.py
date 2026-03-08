@@ -5,18 +5,22 @@ over :class:`FactRecord` collections.  Implements :class:`CalculationService`.
 
 All arithmetic runs in dedicated code — the language model never invents
 the numbers.
+
+Includes derived-period logic (e.g. Q4 = FY - Q1 - Q2 - Q3) and
+period-compatibility validation to prevent mixing incompatible
+period semantics in calculations.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from enum import Enum
+from enum import StrEnum
 
-from tesla_finrag.models import FactRecord
+from tesla_finrag.models import FactRecord, PeriodSemantics
 from tesla_finrag.services import CalculationService
 
 
-class CalcOp(str, Enum):
+class CalcOp(StrEnum):
     """Supported calculation operations."""
 
     SUM = "sum"
@@ -28,6 +32,119 @@ class CalcOp(str, Enum):
     RATIO = "ratio"
     DIFFERENCE = "difference"
     RANK = "rank"
+
+
+class PeriodIncompatibleError(ValueError):
+    """Raised when a calculation would mix incompatible period semantics."""
+
+    def __init__(self, message: str, details: dict | None = None) -> None:
+        super().__init__(message)
+        self.details = details or {}
+
+
+# ---------------------------------------------------------------------------
+# Period-compatibility helpers
+# ---------------------------------------------------------------------------
+
+# Approximate quarter-end months for standard fiscal calendar
+_QUARTER_END_MONTHS = {3, 6, 9}
+_FY_END_MONTH = 12
+
+
+def classify_fact_period(fact: FactRecord) -> PeriodSemantics:
+    """Classify a fact's period semantics from its date metadata.
+
+    Rules:
+    - instant facts -> INSTANT
+    - period_end in December with period_start in January -> ANNUAL_CUMULATIVE
+    - period_end in a standard quarter-end month -> QUARTERLY_STANDALONE
+    - otherwise -> UNKNOWN
+    """
+    if fact.is_instant:
+        return PeriodSemantics.INSTANT
+    if fact.period_end.month == _FY_END_MONTH and fact.period_end.day == 31:
+        if fact.period_start and fact.period_start.month == 1 and fact.period_start.day == 1:
+            return PeriodSemantics.ANNUAL_CUMULATIVE
+        if fact.period_start and fact.period_start.month == 10 and fact.period_start.day == 1:
+            return PeriodSemantics.DERIVED_STANDALONE
+        # Even without explicit period_start, a 12/31 fact from a 10-K
+        # is likely annual cumulative
+        return PeriodSemantics.ANNUAL_CUMULATIVE
+    if fact.period_end.month in _QUARTER_END_MONTHS:
+        return PeriodSemantics.QUARTERLY_STANDALONE
+    return PeriodSemantics.UNKNOWN
+
+
+def are_periods_compatible(
+    sem_a: PeriodSemantics,
+    sem_b: PeriodSemantics,
+) -> bool:
+    """Check if two period semantics are compatible for comparison/arithmetic.
+
+    Same semantics are always compatible except UNKNOWN, which is treated
+    as ambiguous and therefore incompatible with arithmetic. Annual vs
+    quarterly is NOT compatible for direct comparison.
+    """
+    if sem_a == PeriodSemantics.UNKNOWN or sem_b == PeriodSemantics.UNKNOWN:
+        return False
+    if {
+        sem_a,
+        sem_b,
+    } == {
+        PeriodSemantics.QUARTERLY_STANDALONE,
+        PeriodSemantics.DERIVED_STANDALONE,
+    }:
+        return True
+    return sem_a == sem_b
+
+
+def derive_standalone_quarter(
+    concept: str,
+    target_year: int,
+    target_quarter: int,
+    facts: list[FactRecord],
+) -> tuple[float | None, list[str]]:
+    """Derive a standalone quarter value from FY and other quarters.
+
+    For Q4: Q4 = FY - Q1 - Q2 - Q3
+    For other quarters that lack direct data: not yet supported.
+
+    Returns:
+        (derived_value, trace) or (None, trace) if derivation fails.
+    """
+    if target_quarter != 4:
+        return None, [f"Derived-period logic only supports Q4; got Q{target_quarter}"]
+
+    # Find FY value
+    fy_end = date(target_year, 12, 31)
+    fy_facts = [f for f in facts if f.concept == concept and f.period_end == fy_end]
+    if not fy_facts:
+        return None, [f"No FY{target_year} value found for {concept}"]
+
+    fy_val = fy_facts[0].value * fy_facts[0].scale
+    trace = [f"Deriving Q4 {target_year} for {concept}:"]
+    trace.append(f"  FY{target_year}: {fy_val:,.2f}")
+
+    # Find Q1, Q2, Q3
+    quarter_ends = {
+        1: date(target_year, 3, 31),
+        2: date(target_year, 6, 30),
+        3: date(target_year, 9, 30),
+    }
+    q_vals: dict[int, float] = {}
+    for q, pe in quarter_ends.items():
+        q_facts = [f for f in facts if f.concept == concept and f.period_end == pe]
+        if not q_facts:
+            return None, trace + [f"  Missing Q{q} {target_year} — cannot derive Q4"]
+        q_vals[q] = q_facts[0].value * q_facts[0].scale
+        trace.append(f"  Q{q} {target_year}: {q_vals[q]:,.2f}")
+
+    derived = fy_val - sum(q_vals.values())
+    trace.append(
+        f"  Q4 = FY - Q1 - Q2 - Q3 = {fy_val:,.2f} - "
+        f"{q_vals[1]:,.2f} - {q_vals[2]:,.2f} - {q_vals[3]:,.2f} = {derived:,.2f}"
+    )
+    return derived, trace
 
 
 class StructuredCalculator(CalculationService):
@@ -157,6 +274,7 @@ class StructuredCalculator(CalculationService):
         period_b: date,
         *,
         as_percent: bool = False,
+        validate_semantics: bool = True,
     ) -> tuple[float, list[str]]:
         """Compute change from period_a to period_b for a concept.
 
@@ -166,9 +284,13 @@ class StructuredCalculator(CalculationService):
             period_a: Earlier (base) period end date.
             period_b: Later (comparison) period end date.
             as_percent: If True, return percentage change.
+            validate_semantics: If True, reject incompatible period semantics.
 
         Returns:
             (change_value, trace) tuple.
+
+        Raises:
+            PeriodIncompatibleError: If period semantics are incompatible.
         """
         val_a = self._lookup_value(facts, concept, period_a)
         val_b = self._lookup_value(facts, concept, period_b)
@@ -180,6 +302,26 @@ class StructuredCalculator(CalculationService):
             if val_b is None:
                 missing.append(f"period {period_b}")
             return 0.0, [f"Missing {concept} for: {', '.join(missing)}"]
+
+        # Validate period-semantic compatibility
+        if validate_semantics:
+            fact_a = self._lookup_fact(facts, concept, period_a)
+            fact_b = self._lookup_fact(facts, concept, period_b)
+            if fact_a and fact_b:
+                sem_a = classify_fact_period(fact_a)
+                sem_b = classify_fact_period(fact_b)
+                if not are_periods_compatible(sem_a, sem_b):
+                    raise PeriodIncompatibleError(
+                        f"Cannot compare {concept}: {sem_a.value} ({period_a}) "
+                        f"vs {sem_b.value} ({period_b})",
+                        details={
+                            "concept": concept,
+                            "period_a": str(period_a),
+                            "period_b": str(period_b),
+                            "semantics_a": sem_a.value,
+                            "semantics_b": sem_b.value,
+                        },
+                    )
 
         change = val_b - val_a
         trace = [
@@ -286,6 +428,21 @@ class StructuredCalculator(CalculationService):
             if period is not None and fact.period_end != period:
                 continue
             return fact.value * fact.scale
+        return None
+
+    def _lookup_fact(
+        self,
+        facts: list[FactRecord],
+        concept: str,
+        period: date | None = None,
+    ) -> FactRecord | None:
+        """Look up a single fact record for a concept and optional period."""
+        for fact in facts:
+            if fact.concept != concept:
+                continue
+            if period is not None and fact.period_end != period:
+                continue
+            return fact
         return None
 
     def _parse_change_expr(

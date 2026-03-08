@@ -68,6 +68,16 @@ class QueryType(StrEnum):
     HYBRID_REASONING = "hybrid_reasoning"
 
 
+class PeriodSemantics(StrEnum):
+    """Temporal classification of a financial fact or query period."""
+
+    ANNUAL_CUMULATIVE = "annual_cumulative"
+    QUARTERLY_STANDALONE = "quarterly_standalone"
+    DERIVED_STANDALONE = "derived_standalone"
+    INSTANT = "instant"
+    UNKNOWN = "unknown"
+
+
 class SearchMode(StrEnum):
     """Which search strategy produced a retrieval result."""
 
@@ -328,6 +338,29 @@ class FactRecord(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class SubQuery(BaseModel):
+    """A decomposed retrieval unit targeting a specific period and concept set.
+
+    Multi-period and comparison questions are split into sub-queries so
+    each required period can be retrieved and validated independently
+    before the final answer assembly step.
+    """
+
+    sub_query_id: UUID = Field(default_factory=uuid4)
+    text: str = Field(description="Natural-language retrieval query for this unit.")
+    target_period: date | None = Field(
+        None,
+        description="Fiscal period-end this sub-query targets.",
+    )
+    target_concepts: list[str] = Field(
+        default_factory=list,
+        description="XBRL concepts to retrieve for this sub-query.",
+    )
+    period_semantics: PeriodSemantics = PeriodSemantics.UNKNOWN
+
+    model_config = {"frozen": True}
+
+
 class QueryPlan(BaseModel):
     """Structured representation of a decomposed user question.
 
@@ -338,6 +371,10 @@ class QueryPlan(BaseModel):
     original_query: str
     query_type: QueryType = QueryType.HYBRID_REASONING
     sub_questions: list[str] = Field(default_factory=list)
+    sub_queries: list[SubQuery] = Field(
+        default_factory=list,
+        description="Period-aware decomposed retrieval units for multi-period questions.",
+    )
     retrieval_keywords: list[str] = Field(
         default_factory=list,
         description="Explicit keywords for lexical search.",
@@ -345,6 +382,10 @@ class QueryPlan(BaseModel):
     required_periods: list[date] = Field(
         default_factory=list,
         description="Fiscal period-end dates the question explicitly references.",
+    )
+    period_semantics: dict[str, PeriodSemantics] = Field(
+        default_factory=dict,
+        description="ISO date string -> period semantics classification.",
     )
     required_concepts: list[str] = Field(
         default_factory=list,

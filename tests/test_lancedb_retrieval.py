@@ -7,6 +7,7 @@ Covers:
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from uuid import UUID
 
@@ -58,8 +59,6 @@ def populated_store(tmp_path: Path) -> LanceDBRetrievalStore:
 @pytest.fixture()
 def corpus_repo() -> InMemoryCorpusRepository:
     """Minimal corpus repo with chunks matching the store."""
-    from datetime import date
-
     from tesla_finrag.models import FilingDocument, FilingType
 
     repo = InMemoryCorpusRepository()
@@ -125,7 +124,7 @@ class TestLanceDBHybridRetrieval:
 
         from tesla_finrag.models import QueryPlan
 
-        plan = QueryPlan(original_query="What was Tesla's revenue?", sub_queries=["revenue"])
+        plan = QueryPlan(original_query="What was Tesla's revenue?", sub_questions=["revenue"])
         bundle = service.retrieve(plan)
 
         # Should have retrieved at least some chunks
@@ -137,11 +136,13 @@ class TestLanceDBHybridRetrieval:
         populated_store: LanceDBRetrievalStore,
     ) -> None:
         """Metadata should reflect the indexing backend information."""
-        populated_store.save_metadata({
-            "embedding_model": "nomic-embed-text",
-            "embedding_base_url": "http://localhost:11434/v1",
-            "chunk_count": 2,
-        })
+        populated_store.save_metadata(
+            {
+                "embedding_model": "nomic-embed-text",
+                "embedding_base_url": "http://localhost:11434/v1",
+                "chunk_count": 2,
+            }
+        )
         meta = populated_store.load_metadata()
         assert meta is not None
         assert meta["embedding_model"] == "nomic-embed-text"

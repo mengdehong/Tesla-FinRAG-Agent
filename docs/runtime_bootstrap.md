@@ -176,3 +176,37 @@ uv run ruff check .
 # Verify processed corpus readiness by loading the corpus
 uv run python -c "from tesla_finrag.guidance import check_corpus_readiness; r=check_corpus_readiness(); print(r or 'Corpus is ready')"
 ```
+
+## Evaluation & Delivery Artifacts
+
+After running the evaluation workflow, the following artifacts are available:
+
+| Artifact | Location | Description |
+|---|---|---|
+| Benchmark questions | `data/evaluation/benchmark_questions.json` | 9 complex financial questions covering 6 categories |
+| Failure analyses | `data/evaluation/failure_analyses.json` | Structured diagnosis of failing questions, anchored to baseline run |
+| Latest baseline | `data/evaluation/latest_baseline.json` | Stable pointer to the most recent accepted baseline run with top-line metrics |
+| Run history | `data/evaluation/runs/` | Timestamped JSON files for every evaluation run |
+| Delivery report | `docs/DELIVERY.md` | Architecture, benchmark outcomes, known limitations, and demo guidance |
+
+### Typical Operator Workflow
+
+```bash
+# 1. Build the processed corpus
+uv run python -m tesla_finrag ingest
+
+# 2. Run the evaluation benchmark (saves run + updates latest baseline)
+uv run python -m tesla_finrag.evaluation.runner
+
+# 3. Inspect the latest baseline
+cat data/evaluation/latest_baseline.json
+
+# 4. Review failure analyses
+cat data/evaluation/failure_analyses.json
+
+# 5. Read the delivery report
+cat docs/DELIVERY.md
+
+# 6. Launch the interactive demo
+uv run streamlit run app.py
+```

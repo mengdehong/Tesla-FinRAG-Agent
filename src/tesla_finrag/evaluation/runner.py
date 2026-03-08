@@ -23,6 +23,7 @@ from tesla_finrag.models import AnswerPayload, AnswerStatus
 from tesla_finrag.runtime import ProcessedCorpusError
 
 from .models import (
+    BaselineSummary,
     BenchmarkQuestion,
     EvaluationRun,
     FailureAnalysis,
@@ -40,6 +41,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _BENCHMARK_PATH = _PROJECT_ROOT / "data" / "evaluation" / "benchmark_questions.json"
 _FAILURE_ANALYSIS_PATH = _PROJECT_ROOT / "data" / "evaluation" / "failure_analyses.json"
 _RUNS_DIR = _PROJECT_ROOT / "data" / "evaluation" / "runs"
+_BASELINE_PATH = _PROJECT_ROOT / "data" / "evaluation" / "latest_baseline.json"
 
 # Type alias for the pipeline callable
 PipelineCallable = Callable[[str], AnswerPayload]
@@ -75,6 +77,18 @@ def load_failure_analyses(path: Path | None = None) -> list[FailureAnalysis]:
         raise FileNotFoundError(msg)
     raw = json.loads(p.read_text(encoding="utf-8"))
     return [FailureAnalysis.model_validate(item) for item in raw]
+
+
+def load_baseline(path: Path | None = None) -> BaselineSummary:
+    """Load the latest accepted baseline summary.
+
+    Raises :class:`FileNotFoundError` if no baseline has been persisted yet.
+    """
+    p = path or _BASELINE_PATH
+    if not p.exists():
+        msg = f"Latest baseline not found: {p}"
+        raise FileNotFoundError(msg)
+    return BaselineSummary.model_validate_json(p.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +153,35 @@ class EvaluationRunner:
             encoding="utf-8",
         )
         return path
+
+    def save_baseline(
+        self,
+        run: EvaluationRun,
+        run_file: Path,
+        baseline_path: Path | None = None,
+    ) -> Path:
+        """Write a stable latest-baseline summary that points to *run_file*.
+
+        Returns the path to the written baseline JSON.
+        """
+        dest = baseline_path or _BASELINE_PATH
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        # Build a project-root-relative path for portability.
+        try:
+            rel = run_file.resolve().relative_to(_PROJECT_ROOT.resolve())
+        except ValueError:
+            rel = run_file
+
+        summary = BaselineSummary(
+            run_id=run.run_id,
+            timestamp=run.timestamp,
+            run_file=str(rel),
+            summary=run.summary,
+            question_pass_fail={r.question_id: r.passed for r in run.results},
+        )
+        dest.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+        return dest
 
     # ------------------------------------------------------------------
     # Internal
@@ -244,6 +287,9 @@ def main() -> None:
 
     path = runner.save_run(run)
     print(f"\nRun saved to: {path}")
+
+    baseline_path = runner.save_baseline(run, path)
+    print(f"Latest baseline updated: {baseline_path}")
 
 
 if __name__ == "__main__":

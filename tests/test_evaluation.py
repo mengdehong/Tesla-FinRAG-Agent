@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 
 from tesla_finrag.evaluation.models import (
+    BaselineSummary,
     BenchmarkQuestion,
     Difficulty,
     EvaluationRun,
@@ -25,12 +26,12 @@ from tesla_finrag.evaluation.models import (
 )
 from tesla_finrag.evaluation.runner import (
     EvaluationRunner,
+    load_baseline,
     load_benchmark_questions,
     load_failure_analyses,
 )
 from tesla_finrag.evaluation.workbench import (
     FilingScope,
-    ProviderMode,
     WorkbenchPipeline,
     _seed_demo_repositories,
 )
@@ -332,6 +333,7 @@ class TestDemoResponseContract:
 
     def test_workbench_scope_filters_results(self) -> None:
         from unittest.mock import MagicMock
+
         mock_provider = MagicMock()
         mock_provider.info.provider_name = "mock"
         mock_provider.info.as_dict.return_value = {}
@@ -529,3 +531,121 @@ class TestBenchmarkDataIntegrity:
         analyses = [FailureAnalysis.model_validate(item) for item in raw]
         ids = [fa.case_id for fa in analyses]
         assert len(ids) == len(set(ids)), "Case IDs must be unique"
+
+
+# ---------------------------------------------------------------------------
+# Baseline summary model and round-trip tests
+# ---------------------------------------------------------------------------
+
+
+class TestBaselineSummary:
+    """Verify BaselineSummary model and save/load round-trip."""
+
+    def test_parse_baseline_summary(self) -> None:
+        summary = RunSummary(
+            total=9,
+            pass_count=3,
+            fail_count=6,
+            error_count=0,
+            avg_latency_ms=0.34,
+            pass_rate=0.3333,
+        )
+        baseline = BaselineSummary(
+            run_id="abc123",
+            timestamp="2026-03-07T17:36:48Z",
+            run_file="data/evaluation/runs/run_20260307_173648_abc123.json",
+            summary=summary,
+            question_pass_fail={"BQ-001": True, "BQ-002": False},
+        )
+        assert baseline.run_id == "abc123"
+        assert baseline.summary.pass_count == 3
+        assert baseline.question_pass_fail["BQ-001"] is True
+        assert baseline.question_pass_fail["BQ-002"] is False
+
+    def test_save_and_load_baseline_round_trip(self, tmp_path: Path) -> None:
+        from uuid import uuid4 as _uuid4
+
+        def pipeline(q: str) -> AnswerPayload:
+            return AnswerPayload(
+                plan_id=_uuid4(),
+                status=AnswerStatus.OK,
+                answer_text="Tesla revenue in 2023 was $96.77B. Gross margin was 18.2%.",
+                confidence=0.85,
+            )
+
+        benchmark_data = [
+            {
+                "question_id": "RT-001",
+                "question": "What was revenue?",
+                "category": "cross_year",
+                "difficulty": "easy",
+                "expected_answer_contains": ["revenue", "2023"],
+                "required_periods": ["2023-12-31"],
+                "required_concepts": ["us-gaap:Revenues"],
+            },
+        ]
+        bf = tmp_path / "bq.json"
+        bf.write_text(json.dumps(benchmark_data), encoding="utf-8")
+
+        runner = EvaluationRunner(pipeline=pipeline, benchmark_path=bf)
+        run = runner.run_all()
+        run_file = runner.save_run(run, output_dir=tmp_path / "runs")
+        baseline_path = runner.save_baseline(
+            run, run_file, baseline_path=tmp_path / "latest_baseline.json"
+        )
+
+        assert baseline_path.exists()
+        loaded = load_baseline(baseline_path)
+        assert loaded.run_id == run.run_id
+        assert loaded.summary.total == 1
+        assert loaded.summary.pass_count == 1
+        assert loaded.question_pass_fail["RT-001"] is True
+
+    def test_load_baseline_missing_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError):
+            load_baseline(tmp_path / "nonexistent.json")
+
+
+# ---------------------------------------------------------------------------
+# Baseline discoverability and artifact integrity
+# ---------------------------------------------------------------------------
+
+
+class TestBaselineDiscoverability:
+    """Verify that the project-level baseline pointer and delivery artifacts exist."""
+
+    _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+    def test_latest_baseline_file_exists_and_loads(self) -> None:
+        path = self._PROJECT_ROOT / "data" / "evaluation" / "latest_baseline.json"
+        if not path.exists():
+            pytest.skip("latest_baseline.json not found")
+        baseline = load_baseline(path)
+        assert baseline.run_id, "Baseline must reference a run_id"
+        assert baseline.summary.total > 0, "Baseline must have at least one question"
+
+    def test_baseline_run_file_reference_exists(self) -> None:
+        path = self._PROJECT_ROOT / "data" / "evaluation" / "latest_baseline.json"
+        if not path.exists():
+            pytest.skip("latest_baseline.json not found")
+        baseline = load_baseline(path)
+        run_file = self._PROJECT_ROOT / baseline.run_file
+        assert run_file.exists(), (
+            f"Baseline references run file {baseline.run_file} which does not exist"
+        )
+
+    def test_failure_analyses_reference_baseline(self) -> None:
+        fa_path = self._PROJECT_ROOT / "data" / "evaluation" / "failure_analyses.json"
+        if not fa_path.exists():
+            pytest.skip("failure_analyses.json not found")
+        analyses = load_failure_analyses(fa_path)
+        for fa in analyses:
+            assert fa.baseline_run_id, (
+                f"Failure analysis {fa.case_id} must reference a baseline_run_id"
+            )
+
+    def test_delivery_report_exists(self) -> None:
+        path = self._PROJECT_ROOT / "docs" / "DELIVERY.md"
+        assert path.exists(), "Delivery report docs/DELIVERY.md must exist"
+        content = path.read_text(encoding="utf-8")
+        assert len(content) > 100, "Delivery report must have substantive content"

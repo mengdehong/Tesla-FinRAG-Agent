@@ -92,6 +92,10 @@ class FailureAnalysis(BaseModel):
     root_cause: str = Field(description="Why the system produced this output.")
     mitigation: str = Field(description="Concrete improvement direction.")
     severity: Severity
+    baseline_run_id: str = Field(
+        default="",
+        description="Run ID of the baseline from which this analysis was derived.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,3 +140,28 @@ class EvaluationRun(BaseModel):
     total_questions: int
     results: list[QuestionResult] = Field(default_factory=list)
     summary: RunSummary
+
+
+# ---------------------------------------------------------------------------
+# Latest baseline pointer
+# ---------------------------------------------------------------------------
+
+
+class BaselineSummary(BaseModel):
+    """Stable pointer to the latest accepted evaluation baseline.
+
+    Persisted as ``data/evaluation/latest_baseline.json`` so operators
+    can discover current benchmark status without inspecting individual
+    run files.
+    """
+
+    run_id: str = Field(description="ID of the accepted baseline run.")
+    timestamp: datetime = Field(description="When the baseline run was executed.")
+    run_file: str = Field(
+        description="Relative path from the project root to the underlying run JSON."
+    )
+    summary: RunSummary = Field(description="Top-line metrics snapshot.")
+    question_pass_fail: dict[str, bool] = Field(
+        default_factory=dict,
+        description="Per-question pass/fail map keyed by question_id.",
+    )

@@ -1,0 +1,24 @@
+{
+  "run_id": "6307bfc151b1",
+  "timestamp": "2026-03-07T17:36:48.802129Z",
+  "run_file": "data/evaluation/runs/run_20260307_173648_6307bfc151b1.json",
+  "summary": {
+    "total": 9,
+    "pass_count": 3,
+    "fail_count": 6,
+    "error_count": 0,
+    "avg_latency_ms": 0.34,
+    "pass_rate": 0.3333
+  },
+  "question_pass_fail": {
+    "BQ-001": true,
+    "BQ-002": false,
+    "BQ-003": false,
+    "BQ-004": false,
+    "BQ-005": false,
+    "BQ-006": false,
+    "BQ-007": false,
+    "BQ-008": true,
+    "BQ-009": true
+  }
+}

@@ -11,9 +11,27 @@ import pandas as pd
 import streamlit as st
 
 from tesla_finrag.evaluation import FilingScope, ProviderMode, get_workbench_pipeline
+from tesla_finrag.evaluation.answer_rendering import render_answer_segments
 from tesla_finrag.models import AnswerStatus, FilingType
 
 st.set_page_config(page_title="Tesla FinRAG Workbench", layout="wide")
+
+
+def _dedupe_column_names(headers: list[str]) -> list[str]:
+    """Make table headers Arrow-safe for Streamlit dataframe rendering."""
+    seen: dict[str, int] = {}
+    deduped: list[str] = []
+    for index, header in enumerate(headers, start=1):
+        base = (header or "").strip() or f"Column {index}"
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        deduped.append(base if count == 0 else f"{base} ({count + 1})")
+    return deduped
+
+
+def _table_dataframe(headers: list[str], rows: list[list[str]]) -> pd.DataFrame:
+    """Build a dataframe that tolerates duplicate or blank extracted headers."""
+    return pd.DataFrame(rows, columns=_dedupe_column_names(headers))
 
 
 def _resolve_filing_type(label: str) -> FilingType | None:
@@ -103,7 +121,7 @@ question = st.text_area(
     height=100,
 )
 
-run_clicked = st.button("Run Query", type="primary", use_container_width=True)
+run_clicked = st.button("Run Query", type="primary", width="stretch")
 
 if run_clicked and question.strip():
     if not fiscal_years:
@@ -143,7 +161,12 @@ if run_clicked and question.strip():
     with col_confidence:
         st.markdown(f"**Confidence:** {confidence}")
 
-    st.markdown(answer.answer_text)
+    render_answer_segments(
+        answer.answer_text,
+        markdown_renderer=st.markdown,
+        latex_renderer=st.latex,
+        plain_text_renderer=st.text,
+    )
 
     with st.expander("Citations", expanded=True):
         if answer.citations:
@@ -199,8 +222,8 @@ if run_clicked and question.strip():
                     st.caption(f"Table: {chunk.caption} | Section: {chunk.section_title}")
                     if chunk.headers and chunk.rows:
                         st.dataframe(
-                            pd.DataFrame(chunk.rows, columns=chunk.headers),
-                            use_container_width=True,
+                            _table_dataframe(chunk.headers, chunk.rows),
+                            width="stretch",
                         )
 
             st.markdown(f"**Structured facts:** {len(bundle.facts)}")

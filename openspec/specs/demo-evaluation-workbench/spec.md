@@ -18,18 +18,18 @@ The demo interface SHALL present calculation steps and retrieval debug informati
 - **THEN** the Streamlit interface surfaces those details without requiring the user to inspect backend logs
 
 ### Requirement: Complex evaluation set
-The project SHALL maintain an evaluation set of at least five complex Tesla financial questions that cover cross-document comparison, explicit calculation, text-plus-table linkage, or time-sequenced reasoning.
+The project SHALL maintain an evaluation set of at least five complex Tesla financial questions that cover cross-document comparison, explicit calculation, text-plus-table linkage, or time-sequenced reasoning. The supported evaluation workflow SHALL execute that set against the current processed corpus runtime and persist a baseline run artifact summarizing pass, fail, and error outcomes.
 
 #### Scenario: Run the benchmark set
 - **WHEN** an operator runs the evaluation workflow
-- **THEN** the system executes at least five predefined complex questions against the current answer pipeline
+- **THEN** the system executes at least five predefined complex questions against the current answer pipeline and writes a baseline run artifact that records the resulting summary metrics
 
 ### Requirement: Structured failure analysis
-The project SHALL maintain at least five structured failure or low-quality answer analyses that record the symptom, root cause hypothesis, and an actionable mitigation path.
+The project SHALL maintain at least five structured failure or low-quality answer analyses that record the symptom, root cause hypothesis, an actionable mitigation path, and the benchmark output from which the analysis was derived.
 
 #### Scenario: Record a failed run
 - **WHEN** the evaluation workflow identifies an incorrect or low-quality answer
-- **THEN** the project stores a failure analysis entry with enough detail to guide the next improvement cycle
+- **THEN** the project stores a failure analysis entry linked to the corresponding benchmark question and baseline run output with enough detail to guide the next improvement cycle
 
 ### Requirement: Provider-selectable demo execution
 The demo workbench SHALL allow operators to run the same demo corpus through
@@ -91,4 +91,38 @@ reachable Ollama service or without usable local models.
   cannot be initialized or invoked
 - **THEN** the workbench reports the local provider failure instead of silently
   falling back to deterministic execution
+
+### Requirement: Latest baseline discoverability
+The evaluation workflow SHALL publish a stable, operator-readable pointer or summary for the latest accepted baseline run so contributors can inspect current benchmark status without manually comparing timestamped run files.
+
+#### Scenario: Inspect the latest baseline
+- **WHEN** an operator completes or reviews the evaluation workflow
+- **THEN** the repository exposes the latest baseline location and top-line summary metrics in a documented, stable place
+
+### Requirement: Basic LaTeX-aware answer rendering
+The demo workbench SHALL render explicit block-math expressions in the answer
+body as formatted formulas while continuing to render non-math answer content as
+normal text.
+
+#### Scenario: Render block formula in answer text
+- **WHEN** the answer text includes an explicit block formula delimited by
+  `$$...$$` or `\[...\]`
+- **THEN** the workbench displays that block using math rendering instead of raw
+  delimiter text
+
+#### Scenario: Keep currency text as plain narrative
+- **WHEN** the answer text contains currency expressions such as `$96.77B`
+  without explicit block-math delimiters
+- **THEN** the workbench keeps that content in the normal text rendering lane
+  and does not treat it as a formula block
+
+### Requirement: Non-blocking formula rendering fallback
+The demo workbench SHALL preserve answer visibility when a detected formula
+block cannot be rendered.
+
+#### Scenario: Formula block is malformed
+- **WHEN** a detected formula block contains invalid LaTeX syntax for the
+  renderer
+- **THEN** the workbench falls back to plain text for that block and continues
+  displaying the remainder of the answer, citations, and debug sections
 

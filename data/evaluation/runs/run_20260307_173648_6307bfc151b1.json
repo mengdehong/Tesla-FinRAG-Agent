@@ -1,0 +1,87 @@
+{
+  "run_id": "6307bfc151b1",
+  "timestamp": "2026-03-07T17:36:48.802129Z",
+  "total_questions": 9,
+  "results": [
+    {
+      "question_id": "BQ-001",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\nus-gaap:Revenues at 2022-12-31: 81,462,000,000.00\nus-gaap:Revenues at 2023-12-31: 96,773,000,000.00\nChange: 96,773,000,000.00 - 81,462,000,000.00 = 15,311,000,000.00\nPercentage change: 18.80%\n\nResult: 18.80",
+      "latency_ms": 0.94,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-002",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\nus-gaap:Revenues: 96,773,000,000.00\nus-gaap:GrossProfit: 17,660,000,000.00\nRatio: 96,773,000,000.00 / 17,660,000,000.00 = 5.4798\n\nResult: 5.48",
+      "latency_ms": 0.29,
+      "passed": false,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-003",
+      "answer_status": "insufficient_evidence",
+      "answer_text": "Insufficient evidence found to answer this question. The available filing data did not contain grounded numeric facts for the requested metric.",
+      "latency_ms": 0.3,
+      "passed": false,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-004",
+      "answer_status": "insufficient_evidence",
+      "answer_text": "Insufficient evidence found to answer this question. The available filing data may not contain the relevant information.",
+      "latency_ms": 0.21,
+      "passed": false,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-005",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\nDenominator not found: custom:OperatingMarginPercent\n\nResult: 0.00",
+      "latency_ms": 0.33,
+      "passed": false,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-006",
+      "answer_status": "insufficient_evidence",
+      "answer_text": "Insufficient evidence found to answer this question. The available filing data did not contain grounded numeric facts for the requested metric.",
+      "latency_ms": 0.29,
+      "passed": false,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-007",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\nFree Cash Flow: 4,358,000,000.00 USD (period ending 2023-12-31)\n\nResult: 4,358,000,000.00",
+      "latency_ms": 0.24,
+      "passed": false,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-008",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\nTotal Revenues: 96,773,000,000.00 USD (period ending 2023-12-31)\n\nResult: 96,773,000,000.00",
+      "latency_ms": 0.22,
+      "passed": true,
+      "notes": ""
+    },
+    {
+      "question_id": "BQ-009",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\nFree Cash Flow: 4,358,000,000.00 USD (period ending 2023-12-31)\n\n[Management Discussion and Analysis] In full year 2023, Tesla continued to expand its manufacturing capacity and delivery infrastructure. The company focused on operational efficiency and cost reduction initiatives while investing in new product development and energy storage solutions.\n\n[Risk Factors] Key risks include increasing competition in the EV market, potential impacts of pricing strategy on margins, regulatory changes, and macroeconomic conditions affecting consumer demand. Raw material costs and supply chain reliability remain ongoing concerns.",
+      "latency_ms": 0.22,
+      "passed": true,
+      "notes": ""
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "pass_count": 3,
+    "fail_count": 6,
+    "error_count": 0,
+    "avg_latency_ms": 0.34,
+    "pass_rate": 0.3333
+  }
+}

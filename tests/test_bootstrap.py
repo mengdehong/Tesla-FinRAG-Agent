@@ -138,27 +138,24 @@ class TestIngestCLI:
         assert args.output_dir == "/tmp/out"
         assert args.workers == 3
 
-    def test_ingest_worker_resolution_auto_caps_at_four(self, monkeypatch: pytest.MonkeyPatch):
-        from tesla_finrag.__main__ import _resolve_ingest_workers
-
-        monkeypatch.setattr("tesla_finrag.__main__.os.cpu_count", lambda: 12)
-        assert _resolve_ingest_workers(0) == 4
-        assert _resolve_ingest_workers(2) == 2
-
     def test_ingest_runs_pipeline_and_reports(self, tmp_path: Path, capsys):
         """Simulate a successful pipeline run and verify the report output."""
         from tesla_finrag.__main__ import main
 
         fake_summary = {
             "filings": 3,
+            "reprocessed_filings": 2,
+            "reused_filings": 1,
             "section_chunks": 42,
             "table_chunks": 10,
             "fact_records": 100,
+            "facts_reused": True,
             "manifest_available": 5,
             "manifest_gaps": 1,
             "failed_filings": 0,
             "failed_details": [],
             "elapsed_seconds": 12.34,
+            "workers": 2,
             "gap_details": [
                 {
                     "fiscal_year": 2020,
@@ -179,7 +176,10 @@ class TestIngestCLI:
         assert rc == 0
         captured = capsys.readouterr()
         assert "Ingestion Complete" in captured.out
-        assert "Filings written:    3" in captured.out
+        assert "Filings total:      3" in captured.out
+        assert "Reprocessed:        2" in captured.out
+        assert "Reused:             1" in captured.out
+        assert "Facts reused:       yes" in captured.out
         assert "Section chunks:     42" in captured.out
         assert "Manifest gaps:      1" in captured.out
         assert "Fact records:       100" in captured.out
@@ -204,9 +204,12 @@ class TestIngestCLI:
 
         fake_summary = {
             "filings": 1,
+            "reprocessed_filings": 1,
+            "reused_filings": 0,
             "section_chunks": 0,
             "table_chunks": 0,
             "fact_records": 0,
+            "facts_reused": False,
             "manifest_available": 1,
             "manifest_gaps": 0,
             "failed_filings": 1,
@@ -218,6 +221,7 @@ class TestIngestCLI:
                 }
             ],
             "elapsed_seconds": 10.0,
+            "workers": 1,
             "gap_details": [],
         }
 

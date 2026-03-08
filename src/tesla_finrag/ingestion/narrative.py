@@ -12,8 +12,7 @@ import re
 from pathlib import Path
 from uuid import UUID
 
-import pdfplumber
-
+from tesla_finrag.ingestion.analysis import FilingPdfAnalysis, analyze_filing_pdf
 from tesla_finrag.models import ChunkKind, SectionChunk
 
 # ---------------------------------------------------------------------------
@@ -178,13 +177,26 @@ def parse_narrative(
     Returns:
         List of :class:`SectionChunk` instances with provenance metadata.
     """
-    pages: list[tuple[int, str]] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for i, page in enumerate(pdf.pages, start=1):
-            text = page.extract_text() or ""
-            if text.strip():
-                pages.append((i, text))
+    analysis = analyze_filing_pdf(pdf_path)
+    return narrative_chunks_from_analysis(
+        analysis,
+        doc_id,
+        max_chunk_tokens=max_chunk_tokens,
+        overlap_tokens=overlap_tokens,
+    )
 
+
+def narrative_chunks_from_analysis(
+    analysis: FilingPdfAnalysis,
+    doc_id: UUID,
+    *,
+    max_chunk_tokens: int = _MAX_CHUNK_TOKENS,
+    overlap_tokens: int = _OVERLAP_TOKENS,
+) -> list[SectionChunk]:
+    """Build narrative chunks from a shared filing analysis result."""
+    pages = [
+        (page.page_number, page.text) for page in analysis.pages if page.text.strip()
+    ]
     sections = _detect_sections(pages)
     chunks: list[SectionChunk] = []
 

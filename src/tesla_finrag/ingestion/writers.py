@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 from uuid import UUID
@@ -134,6 +135,46 @@ def write_table_chunks(
         paths.append(path)
     logger.info("Wrote %d table chunks for doc %s", len(chunks), doc_id)
     return paths
+
+
+def clear_filing_outputs(
+    doc_id: UUID,
+    output_dir: Path = _DEFAULT_OUTPUT_DIR,
+) -> None:
+    """Remove derived chunk artifacts for a single filing before rewrite."""
+    for subdir in ("chunks", "tables"):
+        path = output_dir / subdir / str(doc_id)
+        if path.exists():
+            shutil.rmtree(path)
+
+
+def remove_filing_artifacts(
+    doc_id: UUID,
+    output_dir: Path = _DEFAULT_OUTPUT_DIR,
+) -> None:
+    """Remove all persisted artifacts for a filing."""
+    filing_path = output_dir / "filings" / f"{doc_id}.json"
+    if filing_path.exists():
+        filing_path.unlink()
+    clear_filing_outputs(doc_id, output_dir)
+
+
+def write_filing_bundle(
+    filing: FilingDocument,
+    section_chunks: list[SectionChunk],
+    table_chunks: list[TableChunk],
+    output_dir: Path = _DEFAULT_OUTPUT_DIR,
+) -> dict[str, int]:
+    """Atomically replace persisted outputs for a single filing."""
+    write_filings([filing], output_dir)
+    clear_filing_outputs(filing.doc_id, output_dir)
+    write_section_chunks(section_chunks, filing.doc_id, output_dir)
+    write_table_chunks(table_chunks, filing.doc_id, output_dir)
+    return {
+        "filings": 1,
+        "section_chunks": len(section_chunks),
+        "table_chunks": len(table_chunks),
+    }
 
 
 def write_facts(

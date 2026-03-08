@@ -12,8 +12,7 @@ import re
 from pathlib import Path
 from uuid import UUID
 
-import pdfplumber
-
+from tesla_finrag.ingestion.analysis import FilingPdfAnalysis, analyze_filing_pdf
 from tesla_finrag.models import ChunkKind, TableChunk
 
 # ---------------------------------------------------------------------------
@@ -111,46 +110,52 @@ def extract_tables(
     Returns:
         List of :class:`TableChunk` instances.
     """
+    analysis = analyze_filing_pdf(pdf_path)
+    return table_chunks_from_analysis(analysis, doc_id, min_rows=min_rows)
+
+
+def table_chunks_from_analysis(
+    analysis: FilingPdfAnalysis,
+    doc_id: UUID,
+    *,
+    min_rows: int = 2,
+) -> list[TableChunk]:
+    """Build table chunks from a shared filing analysis result."""
     chunks: list[TableChunk] = []
     current_section = "Unknown"
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_idx, page in enumerate(pdf.pages):
-            page_num = page_idx + 1
-            page_text = page.extract_text() or ""
+    for page in analysis.pages:
+        page_text = page.text
 
-            # Update section context.
-            current_section = _current_section_from_page(page_text, current_section)
+        # Update section context.
+        current_section = _current_section_from_page(page_text, current_section)
 
-            # Extract tables from this page.
-            tables = page.extract_tables() or []
-            for table_idx, raw_table in enumerate(tables):
-                if not raw_table:
-                    continue
+        for table_idx, raw_table in enumerate(page.raw_tables):
+            if not raw_table:
+                continue
 
-                headers, rows = _clean_table(raw_table)
-                if len(rows) < min_rows:
-                    continue
+            headers, rows = _clean_table(raw_table)
+            if len(rows) < min_rows:
+                continue
 
-                raw_text = _table_to_text(headers, rows)
-                if not raw_text.strip():
-                    continue
+            raw_text = _table_to_text(headers, rows)
+            if not raw_text.strip():
+                continue
 
-                # Try to extract a caption from nearby text.
-                caption = _extract_caption(page_text, table_idx)
+            caption = _extract_caption(page_text, table_idx)
 
-                chunks.append(
-                    TableChunk(
-                        doc_id=doc_id,
-                        kind=ChunkKind.TABLE,
-                        page_number=page_num,
-                        section_title=current_section,
-                        caption=caption,
-                        headers=headers,
-                        rows=rows,
-                        raw_text=raw_text,
-                    )
+            chunks.append(
+                TableChunk(
+                    doc_id=doc_id,
+                    kind=ChunkKind.TABLE,
+                    page_number=page.page_number,
+                    section_title=current_section,
+                    caption=caption,
+                    headers=headers,
+                    rows=rows,
+                    raw_text=raw_text,
                 )
+            )
 
     return chunks
 

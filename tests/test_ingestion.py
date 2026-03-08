@@ -136,6 +136,62 @@ def companyfacts_path(tmp_path: Path) -> Path:
                         ]
                     },
                 },
+                "NetCashProvidedByUsedInOperatingActivities": {
+                    "label": "Net cash provided by operating activities",
+                    "description": "Operating cash flow",
+                    "units": {
+                        "USD": [
+                            {
+                                "end": "2023-03-31",
+                                "start": "2023-01-01",
+                                "val": 2513000000,
+                                "accn": "0001628280-23-012345",
+                                "fy": 2023,
+                                "fp": "Q1",
+                                "form": "10-Q",
+                                "filed": "2023-04-24",
+                            },
+                            {
+                                "end": "2023-12-31",
+                                "start": "2023-01-01",
+                                "val": 13256000000,
+                                "accn": "0001628280-24-001234",
+                                "fy": 2023,
+                                "fp": "FY",
+                                "form": "10-K",
+                                "filed": "2024-01-29",
+                            },
+                        ]
+                    },
+                },
+                "PaymentsToAcquirePropertyPlantAndEquipment": {
+                    "label": "Payments to acquire property, plant and equipment",
+                    "description": "Capital expenditures",
+                    "units": {
+                        "USD": [
+                            {
+                                "end": "2023-03-31",
+                                "start": "2023-01-01",
+                                "val": -2072000000,
+                                "accn": "0001628280-23-012345",
+                                "fy": 2023,
+                                "fp": "Q1",
+                                "form": "10-Q",
+                                "filed": "2023-04-24",
+                            },
+                            {
+                                "end": "2023-12-31",
+                                "start": "2023-01-01",
+                                "val": -8898000000,
+                                "accn": "0001628280-24-001234",
+                                "fy": 2023,
+                                "fp": "FY",
+                                "form": "10-K",
+                                "filed": "2024-01-29",
+                            },
+                        ]
+                    },
+                },
             },
             "dei": {
                 "EntityCommonStockSharesOutstanding": {
@@ -637,8 +693,9 @@ class TestXBRLNormalization:
 
         records = normalize_companyfacts(companyfacts_path)
         # The 8-K entry should be skipped; only 10-K and 10-Q accepted.
-        # We have 2 valid Revenue entries + 1 Assets + 1 dei entry = 4.
-        assert len(records) == 4
+        # We have 2 Revenue + 1 Assets + 2 OCF + 2 PP&E + 1 dei + 2 derived capex
+        # + 2 derived free cash flow = 12.
+        assert len(records) == 12
 
     def test_duration_vs_instant_facts(self, companyfacts_path: Path) -> None:
         from tesla_finrag.ingestion.xbrl import normalize_companyfacts
@@ -698,6 +755,30 @@ class TestXBRLNormalization:
         units = {r.unit for r in records}
         assert "USD" in units
         assert "shares" in units
+
+    def test_derives_custom_capex_and_free_cash_flow(self, companyfacts_path: Path) -> None:
+        from tesla_finrag.ingestion.xbrl import normalize_companyfacts
+
+        records = normalize_companyfacts(companyfacts_path)
+        concepts = {r.concept for r in records}
+        assert "custom:CapitalExpenditure" in concepts
+        assert "custom:FreeCashFlow" in concepts
+
+        fy_capex = next(
+            r
+            for r in records
+            if r.concept == "custom:CapitalExpenditure" and r.period_end == date(2023, 12, 31)
+        )
+        fy_fcf = next(
+            r
+            for r in records
+            if r.concept == "custom:FreeCashFlow" and r.period_end == date(2023, 12, 31)
+        )
+
+        assert fy_capex.value == 8_898_000_000
+        assert fy_fcf.value == 4_358_000_000
+        assert fy_capex.period_start == date(2023, 1, 1)
+        assert fy_fcf.period_start == date(2023, 1, 1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -39,6 +39,13 @@ _ACCEPTED_FORMS = {"10-K", "10-Q"}
 
 # Minimum fiscal year to include.
 _MIN_FY = 2021
+_OPERATING_CASH_FLOW_CONCEPTS = (
+    "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+    "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+)
+_CAPITAL_EXPENDITURE_CONCEPTS = (
+    "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +74,91 @@ def _resolve_doc_id(
     if key not in doc_id_cache:
         doc_id_cache[key] = _stable_doc_id(_DEFAULT_TICKER, form, fy, quarter)
     return doc_id_cache[key]
+
+
+def _fact_identity(record: FactRecord) -> tuple[UUID, date | None, date, str, bool]:
+    """Build a period-and-unit key for pairing related facts."""
+    return (
+        record.doc_id,
+        record.period_start,
+        record.period_end,
+        record.unit,
+        record.is_instant,
+    )
+
+
+def _derive_custom_facts(records: list[FactRecord]) -> list[FactRecord]:
+    """Derive custom facts needed by the query planner from normalized XBRL facts."""
+    preferred_facts: dict[str, dict[tuple[UUID, date | None, date, str, bool], FactRecord]] = {
+        concept: {} for concept in (*_OPERATING_CASH_FLOW_CONCEPTS, *_CAPITAL_EXPENDITURE_CONCEPTS)
+    }
+
+    for record in records:
+        concept_map = preferred_facts.get(record.concept)
+        if concept_map is None:
+            continue
+        key = _fact_identity(record)
+        concept_map.setdefault(key, record)
+
+    derived: list[FactRecord] = []
+    derived_keys: set[tuple[str, tuple[UUID, date | None, date, str, bool]]] = set()
+
+    for concept in _CAPITAL_EXPENDITURE_CONCEPTS:
+        for key, capex_fact in preferred_facts[concept].items():
+            derived_key = ("custom:CapitalExpenditure", key)
+            if derived_key in derived_keys:
+                continue
+            derived_keys.add(derived_key)
+            derived.append(
+                FactRecord(
+                    doc_id=capex_fact.doc_id,
+                    concept="custom:CapitalExpenditure",
+                    label="Capital Expenditure",
+                    value=abs(capex_fact.value),
+                    unit=capex_fact.unit,
+                    scale=capex_fact.scale,
+                    period_start=capex_fact.period_start,
+                    period_end=capex_fact.period_end,
+                    is_instant=capex_fact.is_instant,
+                    source_chunk_id=capex_fact.source_chunk_id,
+                )
+            )
+
+    operating_cash_flow: dict[tuple[UUID, date | None, date, str, bool], FactRecord] = {}
+    for concept in _OPERATING_CASH_FLOW_CONCEPTS:
+        for key, fact in preferred_facts[concept].items():
+            operating_cash_flow.setdefault(key, fact)
+
+    capital_expenditure: dict[tuple[UUID, date | None, date, str, bool], FactRecord] = {}
+    for fact in derived:
+        if fact.concept == "custom:CapitalExpenditure":
+            capital_expenditure[_fact_identity(fact)] = fact
+
+    for key, cash_flow_fact in operating_cash_flow.items():
+        capex_fact = capital_expenditure.get(key)
+        if capex_fact is None:
+            continue
+        derived_key = ("custom:FreeCashFlow", key)
+        if derived_key in derived_keys:
+            continue
+        derived_keys.add(derived_key)
+        derived.append(
+            FactRecord(
+                doc_id=cash_flow_fact.doc_id,
+                concept="custom:FreeCashFlow",
+                label="Free Cash Flow",
+                value=(cash_flow_fact.value * cash_flow_fact.scale)
+                - (capex_fact.value * capex_fact.scale),
+                unit=cash_flow_fact.unit,
+                scale=1,
+                period_start=cash_flow_fact.period_start,
+                period_end=cash_flow_fact.period_end,
+                is_instant=cash_flow_fact.is_instant,
+                source_chunk_id=cash_flow_fact.source_chunk_id,
+            )
+        )
+
+    return derived
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +243,9 @@ def normalize_companyfacts(
                             is_instant=is_instant,
                         )
                     )
+
+    derived_records = _derive_custom_facts(records)
+    records.extend(derived_records)
 
     logger.info(
         "Normalised %d fact records from %s (%d skipped)",

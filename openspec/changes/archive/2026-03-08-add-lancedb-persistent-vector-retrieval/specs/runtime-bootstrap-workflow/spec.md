@@ -1,8 +1,5 @@
-# runtime-bootstrap-workflow Specification
+## MODIFIED Requirements
 
-## Purpose
-Defines the supported local bootstrap path from a fresh clone to a runnable runtime surface.
-## Requirements
 ### Requirement: Supported local runtime bootstrap path
 The project SHALL define a single supported local bootstrap path that takes an operator from a fresh clone to a runnable Tesla FinRAG runtime using documented commands for dependency installation, processed-corpus preparation including LanceDB index generation, and runtime launch.
 
@@ -16,4 +13,3 @@ The supported bootstrap path SHALL require operators to verify or generate both 
 #### Scenario: Processed artifacts are not ready
 - **WHEN** an operator follows the documented bootstrap path and the processed files or LanceDB index are absent or incomplete
 - **THEN** the workflow directs the operator to the supported ingestion command instead of assuming the runtime can proceed
-

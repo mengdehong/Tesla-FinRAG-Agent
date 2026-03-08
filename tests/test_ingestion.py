@@ -15,6 +15,7 @@ import json
 import tempfile
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -30,6 +31,27 @@ from tesla_finrag.models import (
     SectionChunk,
     TableChunk,
 )
+
+
+def _section_signature(chunk: SectionChunk) -> tuple[object, ...]:
+    return (
+        chunk.page_number,
+        chunk.char_offset,
+        chunk.section_title,
+        chunk.text,
+        chunk.token_count,
+    )
+
+
+def _table_signature(chunk: TableChunk) -> tuple[object, ...]:
+    return (
+        chunk.page_number,
+        chunk.section_title,
+        chunk.caption,
+        tuple(chunk.headers),
+        tuple(tuple(row) for row in chunk.rows),
+        chunk.raw_text,
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -275,6 +297,7 @@ class TestSourceAdapter:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.integration
 class TestNarrativeParsing:
     """Tests for section-aware narrative chunk extraction."""
 
@@ -392,6 +415,7 @@ class TestNarrativeParsing:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.integration
 class TestTableExtraction:
     """Tests for table extraction and normalization."""
 
@@ -465,6 +489,131 @@ class TestTableExtraction:
 
         assert _extract_caption(page_text, 0) == "Consolidated Balance Sheets"
         assert _extract_caption(page_text, 1) == "Consolidated Statements of Operations"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3.1 Shared PDF analysis regression tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.integration
+class TestSharedPdfAnalysis:
+    def _legacy_narrative(self, pdf_path: Path, doc_id) -> list[SectionChunk]:
+        import pdfplumber
+
+        from tesla_finrag.ingestion.narrative import (
+            _chunk_text,
+            _detect_sections,
+            _estimate_tokens,
+        )
+
+        pages: list[tuple[int, str]] = []
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, start=1):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append((page_num, text))
+
+        chunks: list[SectionChunk] = []
+        for section_title, start_page, section_text in _detect_sections(pages):
+            for chunk_text, char_offset in _chunk_text(section_text):
+                if not chunk_text.strip():
+                    continue
+                chunks.append(
+                    SectionChunk(
+                        doc_id=doc_id,
+                        kind=ChunkKind.SECTION,
+                        page_number=start_page,
+                        char_offset=char_offset,
+                        section_title=section_title,
+                        text=chunk_text,
+                        token_count=_estimate_tokens(chunk_text),
+                    )
+                )
+        return chunks
+
+    def _legacy_tables(self, pdf_path: Path, doc_id) -> list[TableChunk]:
+        import pdfplumber
+
+        from tesla_finrag.ingestion.tables import (
+            _clean_table,
+            _current_section_from_page,
+            _extract_caption,
+            _table_to_text,
+        )
+
+        chunks: list[TableChunk] = []
+        current_section = "Unknown"
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, start=1):
+                page_text = page.extract_text() or ""
+                current_section = _current_section_from_page(page_text, current_section)
+                for table_idx, raw_table in enumerate(page.extract_tables() or []):
+                    if not raw_table:
+                        continue
+                    headers, rows = _clean_table(raw_table)
+                    if len(rows) < 2:
+                        continue
+                    raw_text = _table_to_text(headers, rows)
+                    if not raw_text.strip():
+                        continue
+                    chunks.append(
+                        TableChunk(
+                            doc_id=doc_id,
+                            kind=ChunkKind.TABLE,
+                            page_number=page_num,
+                            section_title=current_section,
+                            caption=_extract_caption(page_text, table_idx),
+                            headers=headers,
+                            rows=rows,
+                            raw_text=raw_text,
+                        )
+                    )
+        return chunks
+
+    @pytest.mark.parametrize(
+        "filename",
+        ["Tesla_2023_Q1_10-Q.pdf", "Tesla_2023_全年_10-K.pdf"],
+    )
+    def test_shared_analysis_preserves_narrative_output(self, filename: str) -> None:
+        pdf_path = Path("data/raw") / filename
+        if not pdf_path.exists():
+            pytest.skip("Test data not available")
+
+        from tesla_finrag.ingestion.analysis import analyze_filing_pdf
+        from tesla_finrag.ingestion.narrative import narrative_chunks_from_analysis
+
+        doc_id = uuid4()
+        analysis = analyze_filing_pdf(pdf_path)
+
+        legacy = self._legacy_narrative(pdf_path, doc_id)
+        shared = narrative_chunks_from_analysis(analysis, doc_id)
+
+        assert [_section_signature(chunk) for chunk in shared] == [
+            _section_signature(chunk) for chunk in legacy
+        ]
+
+    @pytest.mark.parametrize(
+        "filename",
+        ["Tesla_2023_Q1_10-Q.pdf", "Tesla_2023_全年_10-K.pdf"],
+    )
+    def test_shared_analysis_preserves_table_output(self, filename: str) -> None:
+        pdf_path = Path("data/raw") / filename
+        if not pdf_path.exists():
+            pytest.skip("Test data not available")
+
+        from tesla_finrag.ingestion.analysis import analyze_filing_pdf
+        from tesla_finrag.ingestion.tables import table_chunks_from_analysis
+
+        doc_id = uuid4()
+        analysis = analyze_filing_pdf(pdf_path)
+
+        legacy = self._legacy_tables(pdf_path, doc_id)
+        shared = table_chunks_from_analysis(analysis, doc_id)
+
+        assert [_table_signature(chunk) for chunk in shared] == [
+            _table_signature(chunk) for chunk in legacy
+        ]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -659,6 +808,33 @@ class TestWriters:
 
 
 class TestPipeline:
+    @staticmethod
+    def _fake_chunks(
+        filing: FilingDocument,
+    ) -> tuple[list[SectionChunk], list[TableChunk]]:
+        period_label = "FY" if filing.fiscal_quarter is None else f"Q{filing.fiscal_quarter}"
+        sections = [
+            SectionChunk(
+                doc_id=filing.doc_id,
+                section_title=period_label,
+                text=f"Narrative for {period_label}-{filing.fiscal_year}",
+                token_count=4,
+                page_number=1,
+            )
+        ]
+        tables = [
+            TableChunk(
+                doc_id=filing.doc_id,
+                section_title="Item 1. Financial Statements",
+                caption=f"Revenue {filing.fiscal_year}",
+                headers=["Metric", "Value"],
+                rows=[["Revenue", "100"]],
+                raw_text="Metric | Value\nRevenue | 100",
+                page_number=2,
+            )
+        ]
+        return sections, tables
+
     def test_resolve_source_pdf_path_handles_repo_relative_sources(self, raw_dir: Path) -> None:
         from tesla_finrag.ingestion.pipeline import _resolve_source_pdf_path
 
@@ -674,10 +850,18 @@ class TestPipeline:
         def boom(*args: object, **kwargs: object) -> list[SectionChunk]:
             raise ValueError("broken pdf")
 
-        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.parse_narrative", boom)
         monkeypatch.setattr(
-            "tesla_finrag.ingestion.pipeline.extract_tables",
+            "tesla_finrag.ingestion.pipeline.analyze_filing_pdf",
+            lambda *args, **kwargs: object(),
+        )
+        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.narrative_chunks_from_analysis", boom)
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.table_chunks_from_analysis",
             lambda *args, **kwargs: [],
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
         )
 
         summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed")
@@ -709,8 +893,334 @@ class TestPipeline:
             "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
             fake_run_jobs,
         )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
 
         summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed", workers=4)
 
         assert calls == [4, 1]
         assert summary["workers"] == 1
+
+    def test_run_pipeline_reuses_unchanged_filings_on_rerun(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        calls: list[list[str]] = []
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict]]:
+            calls.append([filing.source_path for filing in filings])
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                sections, tables = self._fake_chunks(filing)
+                section_map[filing.doc_id] = sections
+                table_map[filing.doc_id] = tables
+            return section_map, table_map, []
+
+        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+        first = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        second = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+
+        assert first["reprocessed_filings"] == 3
+        assert first["reused_filings"] == 0
+        assert first["workers"] == 3
+        assert second["reprocessed_filings"] == 0
+        assert second["reused_filings"] == 3
+        assert second["workers"] == 1
+        assert calls == [
+            [
+                "data/raw/Tesla_2023_全年_10-K.pdf",
+                "data/raw/Tesla_2023_Q1_10-Q.pdf",
+                "data/raw/Tesla_2023_Q2_10-Q.pdf",
+            ],
+            [],
+        ]
+
+    def test_run_pipeline_reprocesses_only_changed_filing(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        calls: list[list[str]] = []
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict]]:
+            calls.append([Path(filing.source_path).name for filing in filings])
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                sections, tables = self._fake_chunks(filing)
+                section_map[filing.doc_id] = sections
+                table_map[filing.doc_id] = tables
+            return section_map, table_map, []
+
+        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+        run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        (raw_dir / "Tesla_2023_Q1_10-Q.pdf").write_text("changed", encoding="utf-8")
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+
+        assert summary["reprocessed_filings"] == 1
+        assert summary["reused_filings"] == 2
+        assert summary["workers"] == 1
+        assert calls[-1] == ["Tesla_2023_Q1_10-Q.pdf"]
+
+    def test_run_pipeline_reuses_and_invalidates_companyfacts(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        companyfacts = raw_dir / "companyfacts.json"
+        companyfacts.write_text('{"facts":{}}', encoding="utf-8")
+        normalize_calls: list[str] = []
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict]]:
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                sections, tables = self._fake_chunks(filing)
+                section_map[filing.doc_id] = sections
+                table_map[filing.doc_id] = tables
+            return section_map, table_map, []
+
+        def fake_normalize(path: Path) -> list[FactRecord]:
+            normalize_calls.append(path.read_text(encoding="utf-8"))
+            return [
+                FactRecord(
+                    doc_id=uuid4(),
+                    concept="us-gaap:Revenues",
+                    label="Revenue",
+                    value=1.0,
+                    unit="USD",
+                    period_end=date(2023, 3, 31),
+                )
+            ]
+
+        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.normalize_companyfacts",
+            fake_normalize,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.summarize_facts",
+            lambda records: f"{len(records)} facts",
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+        first = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        second = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        companyfacts.write_text('{"facts":{"updated":true}}', encoding="utf-8")
+        third = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+
+        assert first["facts_reused"] is False
+        assert second["facts_reused"] is True
+        assert third["facts_reused"] is False
+        assert len(normalize_calls) == 2
+
+    def test_run_pipeline_reprocesses_when_state_file_is_missing(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+        from tesla_finrag.ingestion.state import state_path_for
+
+        calls: list[int] = []
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict]]:
+            calls.append(len(filings))
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                sections, tables = self._fake_chunks(filing)
+                section_map[filing.doc_id] = sections
+                table_map[filing.doc_id] = tables
+            return section_map, table_map, []
+
+        monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+        run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        state_path_for(output_dir).unlink()
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+
+        assert summary["reprocessed_filings"] == 3
+        assert summary["reused_filings"] == 0
+        assert calls == [3, 3]
+
+    def test_run_pipeline_raises_when_lancedb_build_fails(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict]]:
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                sections, tables = self._fake_chunks(filing)
+                section_map[filing.doc_id] = sections
+                table_map[filing.doc_id] = tables
+            return section_map, table_map, []
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("index failed")),
+        )
+
+        with pytest.raises(RuntimeError, match="index failed"):
+            run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed")
+
+    def test_build_lancedb_index_deletes_removed_doc_rows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import _build_lancedb_index
+        from tesla_finrag.ingestion.state import FilingStateEntry, IngestionState
+        from tesla_finrag.ingestion.writers import remove_filing_artifacts, write_filing_bundle
+        from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
+
+        output_dir = tmp_path / "processed"
+        filing_a = FilingDocument(
+            filing_type=FilingType.QUARTERLY,
+            period_end=date(2023, 3, 31),
+            fiscal_year=2023,
+            fiscal_quarter=1,
+            accession_number="0000950170-2023-03",
+            filed_at=date(2023, 4, 15),
+            source_path="data/raw/Tesla_2023_Q1_10-Q.pdf",
+        )
+        filing_b = FilingDocument(
+            filing_type=FilingType.QUARTERLY,
+            period_end=date(2023, 6, 30),
+            fiscal_year=2023,
+            fiscal_quarter=2,
+            accession_number="0000950170-2023-06",
+            filed_at=date(2023, 7, 15),
+            source_path="data/raw/Tesla_2023_Q2_10-Q.pdf",
+        )
+        sections_a, tables_a = self._fake_chunks(filing_a)
+        sections_b, tables_b = self._fake_chunks(filing_b)
+        write_filing_bundle(filing_a, sections_a, tables_a, output_dir)
+        write_filing_bundle(filing_b, sections_b, tables_b, output_dir)
+
+        store = LanceDBRetrievalStore(output_dir / "lancedb")
+        for chunk in [*sections_a, *tables_a, *sections_b, *tables_b]:
+            if isinstance(chunk, SectionChunk):
+                store.index_section_chunk(chunk, [0.1, 0.2, 0.3])
+            else:
+                store.index_table_chunk(chunk, [0.1, 0.2, 0.3])
+        store.save_metadata(
+            {
+                "embedding_model": "nomic-embed-text",
+                "embedding_base_url": "http://localhost:11434/v1",
+                "embedding_dimensions": 3,
+                "chunk_count": store.chunk_count,
+            }
+        )
+
+        class FakeIndexingProvider:
+            embedding_model = "nomic-embed-text"
+            base_url = "http://localhost:11434/v1"
+            info = SimpleNamespace(
+                provider_name="shared-indexing-backend",
+                embedding_model="nomic-embed-text",
+                base_url="http://localhost:11434/v1",
+            )
+
+            def embed_texts(self, texts: list[str]) -> list[list[float]]:
+                return [[0.1, 0.2, 0.3] for _ in texts]
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.IndexingEmbeddingProvider.from_settings",
+            lambda: FakeIndexingProvider(),
+        )
+
+        remove_filing_artifacts(filing_b.doc_id, output_dir)
+        state = IngestionState(
+            filings={
+                str(filing_a.doc_id): FilingStateEntry(
+                    doc_id=filing_a.doc_id,
+                    source_path=filing_a.source_path,
+                    source_fingerprint="fingerprint-a",
+                    parser_fingerprint="parser",
+                    section_chunk_count=len(sections_a),
+                    table_chunk_count=len(tables_a),
+                )
+            }
+        )
+
+        indexed_count = _build_lancedb_index(
+            output_dir,
+            state,
+            refreshed_doc_ids=set(),
+            removed_doc_ids={filing_b.doc_id},
+        )
+
+        reloaded_store = LanceDBRetrievalStore(output_dir / "lancedb")
+        assert indexed_count == len(sections_a) + len(tables_a)
+        assert reloaded_store.chunk_count == indexed_count

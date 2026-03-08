@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tesla_finrag.runtime import (
+    IncompatibleIndexError,
     MalformedProcessedArtifactError,
     MissingProcessedArtifactError,
     ProcessedCorpusError,
@@ -38,6 +39,15 @@ def _malformed_guidance(exc: MalformedProcessedArtifactError) -> str:
     )
 
 
+def _incompatible_index_guidance(exc: IncompatibleIndexError) -> str:
+    """Return remediation text for an incompatible LanceDB index."""
+    return (
+        f"LanceDB index incompatible: {exc}\n\n"
+        "The persisted vector index was built with a different embedding model.\n"
+        f"Rebuild it by re-running:\n\n  {INGEST_COMMAND}\n"
+    )
+
+
 def format_corpus_guidance(exc: ProcessedCorpusError) -> str:
     """Return a user-facing remediation message for any processed-corpus error.
 
@@ -48,6 +58,8 @@ def format_corpus_guidance(exc: ProcessedCorpusError) -> str:
         return _missing_guidance(exc)
     if isinstance(exc, MalformedProcessedArtifactError):
         return _malformed_guidance(exc)
+    if isinstance(exc, IncompatibleIndexError):
+        return _incompatible_index_guidance(exc)
     # Generic fallback for unknown subclasses.
     return (
         f"Processed corpus error: {exc}\n\n"

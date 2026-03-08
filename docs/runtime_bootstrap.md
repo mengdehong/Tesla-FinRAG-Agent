@@ -29,15 +29,19 @@ uv run python -m tesla_finrag ingest
 ```
 
 On completion, the CLI prints a summary including:
-- Worker count
+- Worker count actually used
 - Output location
-- Counts of filings, section chunks, table chunks, and fact records
+- Counts of total filings, reprocessed filings, reused filings, section chunks, table chunks, and fact records
+- Whether `companyfacts` output was reused
+- LanceDB index status, path, and indexed chunk count
 - Failed filing count (if any)
 - Any manifest gaps (expected filings not found in the raw data)
 
 During the run, the CLI prints per-filing progress so a long-running ingest
-does not look stalled. On the bundled raw corpus, expect minute-scale runtime;
-PDF parsing is CPU-heavy.
+does not look stalled. On reruns, unchanged filings are skipped by consulting a
+local ingestion state file under `data/processed/`, so small edits should only
+reparse the invalidated filings. On the bundled raw corpus, expect minute-scale
+runtime for cold runs; PDF parsing is CPU-heavy.
 
 #### Custom paths
 
@@ -51,6 +55,16 @@ If you want the most predictable path while debugging a problematic filing:
 
 ```bash
 uv run python -m tesla_finrag ingest --workers 1
+```
+
+#### Force a full rebuild
+
+If you need to invalidate every cached artifact and rebuild the processed
+corpus from scratch, remove the processed output and rerun ingestion:
+
+```bash
+rm -rf data/processed
+uv run python -m tesla_finrag ingest
 ```
 
 ### 3. Launch a runtime surface
@@ -84,9 +98,20 @@ data/processed/
 ├── tables/               # Extracted table chunks
 │   └── <doc_id>/
 │       └── <chunk_id>.json
-└── facts/
-    └── all_facts.jsonl   # One FactRecord JSON object per line
+├── facts/
+│   └── all_facts.jsonl   # One FactRecord JSON object per line
+└── lancedb/              # Persistent vector index (built by ingest)
+    ├── chunks.lance/     # LanceDB table data
+    └── _index_metadata.json  # Embedding model, dimensions, build time
 ```
+
+The LanceDB index uses the **shared indexing embedding backend** configured
+via `INDEXING_EMBEDDING_MODEL` (default: `nomic-embed-text`) and
+`INDEXING_EMBEDDING_BASE_URL` (default: Ollama at `http://localhost:11434/v1`).
+If the backend requires authentication, also set `INDEXING_EMBEDDING_API_KEY`
+or reuse `OPENAI_API_KEY` for the indexing client.
+Both ingestion and runtime query embeddings share the same model to ensure
+consistency.
 
 ## Troubleshooting
 
@@ -114,6 +139,22 @@ uv run python -m tesla_finrag ingest
 rm -rf data/processed
 uv run python -m tesla_finrag ingest
 ```
+
+### Incompatible LanceDB index
+
+**Symptom:** Runtime surfaces report:
+
+> LanceDB index incompatible: LanceDB index was built with embedding model … but current configuration uses …
+
+**Fix:** Re-run ingestion to rebuild the index with the current embedding model:
+
+```bash
+uv run python -m tesla_finrag ingest
+```
+
+The runtime now treats a missing metadata file, missing LanceDB table, or
+chunk-count mismatch as an invalid processed corpus and will fail startup
+instead of silently dropping the vector lane.
 
 ### Verifying the corpus
 

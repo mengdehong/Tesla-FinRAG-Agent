@@ -1,11 +1,4 @@
-"""Runtime and CLI smoke tests for the workbench pipeline.
-
-Covers:
-- Local-mode success (deterministic pipeline, no network calls).
-- Remote-mode explicit failure when credentials are missing.
-- CLI ``ask`` subcommand integration.
-- Shared processed runtime across app, evaluation, and CLI surfaces.
-"""
+"""Runtime and CLI smoke tests for the provider-backed workbench pipeline."""
 
 from __future__ import annotations
 
@@ -13,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,62 +18,127 @@ from tesla_finrag.evaluation.workbench import (
     get_workbench_pipeline,
 )
 from tesla_finrag.guidance import INGEST_COMMAND
-from tesla_finrag.provider import ProviderError
+from tesla_finrag.provider import OllamaProvider, OpenAIProvider, ProviderError
+from tesla_finrag.retrieval import InMemoryRetrievalStore
 
-# ---------------------------------------------------------------------------
-# Runtime: local mode
-# ---------------------------------------------------------------------------
+
+def _make_fake_client(answer_text: str) -> MagicMock:
+    mock_client = MagicMock()
+
+    def fake_embed(input, model):  # noqa: A002
+        response = MagicMock()
+        response.data = []
+        for index, _ in enumerate(input):
+            item = MagicMock()
+            item.index = index
+            item.embedding = [float(index)] * 8
+            response.data.append(item)
+        return response
+
+    mock_client.embeddings.create.side_effect = fake_embed
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = answer_text
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_client.chat.completions.create.return_value = mock_response
+    return mock_client
+
+
+def _make_ollama_provider(answer_text: str = "Local Ollama answer.") -> OllamaProvider:
+    return OllamaProvider(
+        client=_make_fake_client(answer_text),
+        embedding_model="nomic-embed-text",
+        chat_model="qwen2.5:7b-instruct",
+        base_url="http://localhost:11434/v1",
+    )
+
+
+def _make_remote_provider(answer_text: str = "Remote OpenAI-compatible answer.") -> OpenAIProvider:
+    return OpenAIProvider(
+        client=_make_fake_client(answer_text),
+        embedding_model="text-embedding-3-small",
+        chat_model="gpt-4o-mini",
+        base_url="https://api.example.com/v1",
+    )
+
+
+class _FakeIndexingProvider:
+    def __init__(
+        self,
+        *,
+        embedding_model: str = "nomic-embed-text",
+        base_url: str = "http://localhost:11434/v1",
+        fail_message: str | None = None,
+    ) -> None:
+        self.embedding_model = embedding_model
+        self.base_url = base_url
+        self.info = SimpleNamespace(
+            provider_name="shared-indexing-backend",
+            embedding_model=embedding_model,
+            base_url=base_url,
+        )
+        self._fail_message = fail_message
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if self._fail_message is not None:
+            raise ProviderError(self._fail_message)
+        return [[float(index)] * 8 for index, _ in enumerate(texts)]
 
 
 class TestLocalModeRuntime:
-    """Verify that local mode works end-to-end without any provider."""
+    """Verify that public local mode is Ollama-backed."""
 
     def test_local_mode_answers_question(self) -> None:
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        provider = _make_ollama_provider("Local Ollama revenue answer.")
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider_mode=ProviderMode.LOCAL,
+            provider=provider,
+            indexing_provider=_FakeIndexingProvider(),
+        )
+
+        _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
+
+        assert answer.status.value == "ok"
+        assert "Ollama" in answer.answer_text
+        assert answer.retrieval_debug["provider_mode"] == "local"
+        assert answer.retrieval_debug["embedding_provider"] == "shared-indexing-backend"
+        assert answer.retrieval_debug["answer_provider"] == "ollama"
+        assert answer.retrieval_debug["answer_model"] == "qwen2.5:7b-instruct"
+
+    def test_local_mode_without_provider_raises(self) -> None:
         corpus_repo, facts_repo = _seed_demo_repositories()
         pipeline = WorkbenchPipeline(
             corpus_repo=corpus_repo,
             facts_repo=facts_repo,
             provider_mode=ProviderMode.LOCAL,
+            provider=None,
         )
 
-        plan, bundle, answer = pipeline.run("What was Tesla's 2023 revenue?")
-
-        assert answer.status.value == "ok"
-        assert answer.answer_text  # non-empty
-        assert answer.retrieval_debug["provider_mode"] == "local"
-        assert answer.retrieval_debug["embedding_provider"] == "none"
-        assert answer.retrieval_debug["answer_provider"] == "template"
-        assert answer.retrieval_debug["answer_model"] == "none"
-        assert answer.retrieval_debug["vector_hits"] == 0
-
-    def test_local_mode_is_default(self) -> None:
-        corpus_repo, facts_repo = _seed_demo_repositories()
-        pipeline = WorkbenchPipeline(
-            corpus_repo=corpus_repo,
-            facts_repo=facts_repo,
-        )
-        assert pipeline.provider_mode == ProviderMode.LOCAL
+        with pytest.raises(ProviderError, match="local Ollama provider mode selected"):
+            pipeline.run("What was Tesla's 2023 revenue?")
 
     def test_local_mode_has_citations(self) -> None:
         corpus_repo, facts_repo = _seed_demo_repositories()
         pipeline = WorkbenchPipeline(
             corpus_repo=corpus_repo,
             facts_repo=facts_repo,
+            provider_mode=ProviderMode.LOCAL,
+            provider=_make_ollama_provider(),
+            indexing_provider=_FakeIndexingProvider(),
         )
+
         answer = pipeline.answer_question("What was Tesla's 2023 revenue?")
         assert len(answer.citations) > 0
 
 
-# ---------------------------------------------------------------------------
-# Runtime: remote mode failure
-# ---------------------------------------------------------------------------
-
-
 class TestRemoteModeFailure:
-    """Verify that remote mode fails explicitly without credentials."""
+    """Verify that remote mode still fails explicitly when misconfigured."""
 
     def test_remote_mode_no_provider_raises(self) -> None:
-        """Pipeline with openai-compatible mode but no provider instance."""
         corpus_repo, facts_repo = _seed_demo_repositories()
         pipeline = WorkbenchPipeline(
             corpus_repo=corpus_repo,
@@ -91,8 +150,6 @@ class TestRemoteModeFailure:
             pipeline.run("What was Tesla's 2023 revenue?")
 
     def test_from_settings_missing_key_raises(self) -> None:
-        """OpenAIProvider.from_settings fails with empty API key."""
-        from tesla_finrag.provider import OpenAIProvider
         from tesla_finrag.settings import AppSettings
 
         settings = AppSettings(
@@ -102,109 +159,112 @@ class TestRemoteModeFailure:
         with pytest.raises(ProviderError, match="API key is required"):
             OpenAIProvider.from_settings(settings)
 
-    @patch("tesla_finrag.provider.openai.OpenAI")
-    def test_remote_embedding_failure_propagates(self, mock_openai_cls: MagicMock) -> None:
-        """If the embedding call fails, ProviderError propagates."""
-        import openai as openai_module
-
-        mock_client = MagicMock()
-        mock_client.embeddings.create.side_effect = openai_module.OpenAIError("Connection refused")
-        mock_openai_cls.return_value = mock_client
-
-        from tesla_finrag.provider import OpenAIProvider
-
-        provider = OpenAIProvider(
-            client=mock_client,
-            embedding_model="text-embedding-3-small",
-            chat_model="gpt-4o-mini",
-        )
-
+    def test_remote_embedding_failure_propagates(self) -> None:
         corpus_repo, facts_repo = _seed_demo_repositories()
         pipeline = WorkbenchPipeline(
             corpus_repo=corpus_repo,
             facts_repo=facts_repo,
             provider_mode=ProviderMode.OPENAI_COMPATIBLE,
-            provider=provider,
+            provider=_make_remote_provider(),
+            retrieval_store=InMemoryRetrievalStore(),
+            indexing_provider=_FakeIndexingProvider(fail_message="shared embedding failure"),
         )
-        with pytest.raises(ProviderError, match="Embedding request failed"):
+        with pytest.raises(ProviderError, match="shared embedding failure"):
             pipeline.run("What was Tesla's 2023 revenue?")
-
-
-# ---------------------------------------------------------------------------
-# CLI smoke tests
-# ---------------------------------------------------------------------------
 
 
 class TestCLISmoke:
     """Smoke tests for the ``ask`` CLI subcommand."""
 
-    def test_cli_local_text_output(self, tmp_path: Path) -> None:
-        """CLI uses the processed runtime and returns summary output."""
+    def test_cli_local_text_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from tesla_finrag.__main__ import main
+        from tesla_finrag.settings import get_settings
         from tests.test_runtime import _build_valid_fixture
 
         _build_valid_fixture(tmp_path)
-        repo_root = Path(__file__).resolve().parents[1]
-        env = {
-            **subprocess.os.environ,
-            "PROCESSED_DATA_DIR": str(tmp_path),
-        }
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tesla_finrag",
-                "ask",
-                "--question",
-                "What was Tesla's Q1 2023 revenue?",
-                "--provider",
-                "local",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=repo_root,
-            env=env,
-        )
-        assert result.returncode == 0
-        assert "Status: ok" in result.stdout
-        assert "Citations:" in result.stdout
+        monkeypatch.setenv("PROCESSED_DATA_DIR", str(tmp_path))
+        get_settings.cache_clear()
+        get_workbench_pipeline.cache_clear()
 
-    def test_cli_local_json_output(self, tmp_path: Path) -> None:
-        """CLI JSON path uses the processed runtime from env override."""
+        try:
+            with patch(
+                "tesla_finrag.provider.OllamaProvider.from_settings",
+                return_value=_make_ollama_provider("CLI local answer."),
+            ), patch(
+                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                return_value=_FakeIndexingProvider(),
+            ):
+                result = main(
+                    [
+                        "ask",
+                        "--question",
+                        "What was Tesla's Q1 2023 revenue?",
+                        "--provider",
+                        "local",
+                    ]
+                )
+            captured = capsys.readouterr()
+            assert result == 0
+            assert "Status: ok" in captured.out
+            assert "Citations:" in captured.out
+        finally:
+            get_settings.cache_clear()
+            get_workbench_pipeline.cache_clear()
+
+    def test_cli_local_json_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from tesla_finrag.__main__ import main
+        from tesla_finrag.settings import get_settings
         from tests.test_runtime import _build_valid_fixture
 
         _build_valid_fixture(tmp_path)
-        repo_root = Path(__file__).resolve().parents[1]
-        env = {
-            **subprocess.os.environ,
-            "PROCESSED_DATA_DIR": str(tmp_path),
-        }
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "tesla_finrag",
-                "ask",
-                "--question",
-                "What was Tesla's Q1 2023 revenue?",
-                "--provider",
-                "local",
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=repo_root,
-            env=env,
-        )
-        assert result.returncode == 0
-        payload = json.loads(result.stdout)
-        assert payload["status"] == "ok"
-        assert payload["retrieval_debug"]["provider_mode"] == "local"
-        assert payload["retrieval_debug"]["answer_model"] == "none"
+        monkeypatch.setenv("PROCESSED_DATA_DIR", str(tmp_path))
+        get_settings.cache_clear()
+        get_workbench_pipeline.cache_clear()
 
-    def test_cli_missing_processed_data_fails(self) -> None:
-        """CLI exits with error when processed data is absent."""
+        try:
+            with patch(
+                "tesla_finrag.provider.OllamaProvider.from_settings",
+                return_value=_make_ollama_provider("CLI local JSON answer."),
+            ), patch(
+                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                return_value=_FakeIndexingProvider(),
+            ):
+                result = main(
+                    [
+                        "ask",
+                        "--question",
+                        "What was Tesla's Q1 2023 revenue?",
+                        "--provider",
+                        "local",
+                        "--json",
+                    ]
+                )
+            captured = capsys.readouterr()
+            assert result == 0
+            payload = json.loads(captured.out)
+            assert payload["status"] == "ok"
+            assert payload["retrieval_debug"]["provider_mode"] == "local"
+            assert payload["retrieval_debug"]["answer_provider"] == "ollama"
+        finally:
+            get_settings.cache_clear()
+            get_workbench_pipeline.cache_clear()
+
+    def test_cli_missing_processed_data_fails(self, tmp_path: Path) -> None:
+        missing_dir = tmp_path / "missing-processed"
+        env_override = {
+            **subprocess.os.environ,
+            "PROCESSED_DATA_DIR": str(missing_dir),
+        }
         result = subprocess.run(
             [
                 sys.executable,
@@ -220,12 +280,12 @@ class TestCLISmoke:
             text=True,
             timeout=30,
             cwd="/tmp",
+            env=env_override,
         )
         assert result.returncode != 0
         assert "processed" in result.stderr.lower()
 
     def test_cli_remote_mode_missing_key_fails(self) -> None:
-        """CLI exits with error when remote mode has no API key."""
         env_override = {
             "OPENAI_API_KEY": "",
             "PATH": subprocess.os.environ.get("PATH", ""),
@@ -264,32 +324,38 @@ class TestCLISmoke:
         assert "ingest" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-# Shared processed runtime validation
-# ---------------------------------------------------------------------------
-
-
 class TestSharedProcessedRuntime:
     """All surfaces must go through the same processed runtime bootstrap."""
 
     def test_get_workbench_pipeline_uses_processed_runtime(self, tmp_path: Path) -> None:
-        """Shared entrypoint builds the pipeline from processed artifacts."""
         from tests.test_runtime import _build_valid_fixture
 
         _build_valid_fixture(tmp_path)
         get_workbench_pipeline.cache_clear()
-        pipeline = get_workbench_pipeline(
-            provider_mode=ProviderMode.LOCAL,
-            processed_dir=str(tmp_path),
-        )
-        _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
-        assert answer.status is not None
-        assert answer.retrieval_debug["provider_mode"] == "local"
+        try:
+            with patch(
+                "tesla_finrag.provider.OllamaProvider.from_settings",
+                return_value=_make_ollama_provider("Shared runtime answer."),
+            ), patch(
+                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                return_value=_FakeIndexingProvider(),
+            ):
+                pipeline = get_workbench_pipeline(
+                    provider_mode=ProviderMode.LOCAL,
+                    processed_dir=str(tmp_path),
+                )
+            _, _, answer = pipeline.run("What was Tesla's Q1 2023 revenue?")
+            assert answer.status is not None
+            assert answer.retrieval_debug["provider_mode"] == "local"
+            assert answer.retrieval_debug["answer_provider"] == "ollama"
+        finally:
+            get_workbench_pipeline.cache_clear()
 
     def test_evaluation_runner_default_pipeline_uses_processed_runtime(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Default runner path uses the shared processed runtime entrypoint."""
         from tesla_finrag.evaluation.models import BenchmarkQuestion
         from tesla_finrag.evaluation.runner import EvaluationRunner
         from tesla_finrag.settings import get_settings
@@ -301,17 +367,24 @@ class TestSharedProcessedRuntime:
         get_workbench_pipeline.cache_clear()
 
         try:
-            runner = EvaluationRunner()
-            questions = [
-                BenchmarkQuestion(
-                    question_id="smoke-1",
-                    question="What was Tesla's Q1 2023 revenue?",
-                    category="cross_year",
-                    difficulty="easy",
-                    expected_answer_contains=[],
-                )
-            ]
-            run = runner.run(questions)
+            with patch(
+                "tesla_finrag.provider.OllamaProvider.from_settings",
+                return_value=_make_ollama_provider("Runner local answer."),
+            ), patch(
+                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                return_value=_FakeIndexingProvider(),
+            ):
+                runner = EvaluationRunner()
+                questions = [
+                    BenchmarkQuestion(
+                        question_id="smoke-1",
+                        question="What was Tesla's Q1 2023 revenue?",
+                        category="cross_year",
+                        difficulty="easy",
+                        expected_answer_contains=[],
+                    )
+                ]
+                run = runner.run(questions)
             assert run.total_questions == 1
             assert run.summary.error_count == 0
         finally:

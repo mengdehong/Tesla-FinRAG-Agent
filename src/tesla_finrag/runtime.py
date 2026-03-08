@@ -32,6 +32,7 @@ from tesla_finrag.models import (
     TableChunk,
 )
 from tesla_finrag.retrieval import InMemoryCorpusRepository, InMemoryFactsRepository
+from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
 from tesla_finrag.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,8 @@ _FILINGS_DIR = "filings"
 _CHUNKS_DIR = "chunks"
 _TABLES_DIR = "tables"
 _FACTS_FILE = Path("facts") / "all_facts.jsonl"
+_LANCEDB_DIR = "lancedb"
+_LANCEDB_METADATA_FILE = Path(_LANCEDB_DIR) / "_index_metadata.json"
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +64,10 @@ class MissingProcessedArtifactError(ProcessedCorpusError):
 
 class MalformedProcessedArtifactError(ProcessedCorpusError):
     """An artifact exists but cannot be parsed into the expected model."""
+
+
+class IncompatibleIndexError(ProcessedCorpusError):
+    """The LanceDB index was built with an incompatible embedding model."""
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +109,8 @@ def validate_processed_dir(processed_dir: Path) -> None:
     _require_dir(processed_dir / _CHUNKS_DIR, "chunks")
     _require_dir(processed_dir / _TABLES_DIR, "tables")
     _require_file(processed_dir / _FACTS_FILE, "facts")
+    _require_dir(processed_dir / _LANCEDB_DIR, "lancedb index")
+    _require_file(processed_dir / _LANCEDB_METADATA_FILE, "lancedb metadata")
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +187,7 @@ def _load_facts(facts_path: Path) -> list[FactRecord]:
 
 def load_processed_corpus(
     processed_dir: str | Path | None = None,
-) -> tuple[InMemoryCorpusRepository, InMemoryFactsRepository]:
+) -> tuple[InMemoryCorpusRepository, InMemoryFactsRepository, LanceDBRetrievalStore]:
     """Load processed artifacts into in-memory repositories.
 
     Args:
@@ -186,12 +195,14 @@ def load_processed_corpus(
             If omitted, runtime settings are used.
 
     Returns:
-        A ``(corpus_repo, facts_repo)`` tuple ready for use by the
-        workbench pipeline.
+        A ``(corpus_repo, facts_repo, retrieval_store)`` tuple ready for use
+        by the workbench pipeline.
 
     Raises:
         MissingProcessedArtifactError: A required directory or file is absent.
         MalformedProcessedArtifactError: An artifact cannot be parsed.
+        IncompatibleIndexError: The LanceDB index embedding model does not
+            match the current indexing configuration.
     """
     resolved_dir = resolve_processed_dir(processed_dir)
     validate_processed_dir(resolved_dir)
@@ -216,13 +227,46 @@ def load_processed_corpus(
     for fact in facts:
         facts_repo.upsert_fact(fact)
 
+    # Open persisted LanceDB retrieval store.
+    lancedb_path = resolved_dir / _LANCEDB_DIR
+    retrieval_store = LanceDBRetrievalStore(lancedb_path)
+    meta = retrieval_store.load_metadata()
+    if meta is None:
+        raise MalformedProcessedArtifactError(
+            f"Failed to parse LanceDB metadata at {retrieval_store.metadata_path}."
+        )
+
+    if not retrieval_store.has_table:
+        raise MissingProcessedArtifactError(
+            f"Required LanceDB chunks table not found in: {lancedb_path}. "
+            "Run the ingestion pipeline first to generate processed data."
+        )
+
+    expected_chunk_count = len(section_chunks) + len(table_chunks)
+    if retrieval_store.chunk_count != expected_chunk_count:
+        raise MalformedProcessedArtifactError(
+            "LanceDB index chunk count does not match the processed corpus: "
+            f"expected {expected_chunk_count}, found {retrieval_store.chunk_count}. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+
+    settings = get_settings()
+    stored_model = meta.get("embedding_model", "")
+    if stored_model and stored_model != settings.indexing_embedding_model:
+        raise IncompatibleIndexError(
+            f"LanceDB index was built with embedding model '{stored_model}' "
+            f"but current configuration uses '{settings.indexing_embedding_model}'. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+
     logger.info(
         "Loaded processed corpus: %d filings, %d section chunks, "
-        "%d table chunks, %d facts",
+        "%d table chunks, %d facts, LanceDB chunks: %d",
         len(filings),
         len(section_chunks),
         len(table_chunks),
         len(facts),
+        retrieval_store.chunk_count,
     )
 
-    return corpus_repo, facts_repo
+    return corpus_repo, facts_repo, retrieval_store

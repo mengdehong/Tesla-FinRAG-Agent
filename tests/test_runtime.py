@@ -15,7 +15,9 @@ from tesla_finrag.models import (
     SectionChunk,
     TableChunk,
 )
+from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
 from tesla_finrag.runtime import (
+    IncompatibleIndexError,
     MalformedProcessedArtifactError,
     MissingProcessedArtifactError,
     load_processed_corpus,
@@ -85,6 +87,18 @@ def _build_valid_fixture(root: Path) -> tuple[FilingDocument, SectionChunk, Tabl
         table.model_dump(mode="json"),
     )
     _write_jsonl(root / "facts" / "all_facts.jsonl", [fact.model_dump(mode="json")])
+    store = LanceDBRetrievalStore(root / "lancedb")
+    embedding = [0.1, 0.2, 0.3]
+    store.index_section_chunk(section, embedding)
+    store.index_table_chunk(table, embedding)
+    store.save_metadata(
+        {
+            "embedding_model": "nomic-embed-text",
+            "embedding_base_url": "http://localhost:11434/v1",
+            "embedding_dimensions": len(embedding),
+            "chunk_count": 2,
+        }
+    )
 
     return filing, section, table, fact
 
@@ -115,28 +129,28 @@ class TestLoadValidCorpus:
 
     def test_loads_filing(self, tmp_path: Path) -> None:
         filing, _, _, _ = _build_valid_fixture(tmp_path)
-        corpus_repo, _ = load_processed_corpus(tmp_path)
+        corpus_repo, _, _ = load_processed_corpus(tmp_path)
         loaded = corpus_repo.get_filing(filing.doc_id)
         assert loaded is not None
         assert loaded.doc_id == filing.doc_id
 
     def test_loads_section_chunk(self, tmp_path: Path) -> None:
         filing, section, _, _ = _build_valid_fixture(tmp_path)
-        corpus_repo, _ = load_processed_corpus(tmp_path)
+        corpus_repo, _, _ = load_processed_corpus(tmp_path)
         chunks = corpus_repo.get_section_chunks(filing.doc_id)
         assert len(chunks) == 1
         assert chunks[0].chunk_id == section.chunk_id
 
     def test_loads_table_chunk(self, tmp_path: Path) -> None:
         filing, _, table, _ = _build_valid_fixture(tmp_path)
-        corpus_repo, _ = load_processed_corpus(tmp_path)
+        corpus_repo, _, _ = load_processed_corpus(tmp_path)
         chunks = corpus_repo.get_table_chunks(filing.doc_id)
         assert len(chunks) == 1
         assert chunks[0].chunk_id == table.chunk_id
 
     def test_loads_facts(self, tmp_path: Path) -> None:
         filing, _, _, fact = _build_valid_fixture(tmp_path)
-        _, facts_repo = load_processed_corpus(tmp_path)
+        _, facts_repo, _ = load_processed_corpus(tmp_path)
         facts = facts_repo.get_facts(doc_id=filing.doc_id)
         assert len(facts) == 1
         assert facts[0].concept == fact.concept
@@ -184,6 +198,16 @@ class TestMissingArtifacts:
         with pytest.raises(MissingProcessedArtifactError, match="facts"):
             validate_processed_dir(tmp_path)
 
+    def test_missing_lancedb_metadata(self, tmp_path: Path) -> None:
+        (tmp_path / "filings").mkdir()
+        (tmp_path / "chunks").mkdir()
+        (tmp_path / "tables").mkdir()
+        (tmp_path / "facts").mkdir()
+        (tmp_path / "facts" / "all_facts.jsonl").touch()
+        (tmp_path / "lancedb").mkdir()
+        with pytest.raises(MissingProcessedArtifactError, match="lancedb metadata"):
+            validate_processed_dir(tmp_path)
+
     def test_load_raises_for_missing(self, tmp_path: Path) -> None:
         with pytest.raises(MissingProcessedArtifactError):
             load_processed_corpus(tmp_path / "nonexistent")
@@ -224,4 +248,46 @@ class TestMalformedArtifacts:
         with open(facts_path, "a", encoding="utf-8") as fh:
             fh.write("NOT VALID JSON\n")
         with pytest.raises(MalformedProcessedArtifactError, match="fact record"):
+            load_processed_corpus(tmp_path)
+
+    def test_missing_lancedb_table_raises(self, tmp_path: Path) -> None:
+        _build_valid_fixture(tmp_path)
+        store = LanceDBRetrievalStore(tmp_path / "lancedb")
+        store._db.drop_table("chunks")  # type: ignore[attr-defined]
+        with pytest.raises(MissingProcessedArtifactError, match="chunks table"):
+            load_processed_corpus(tmp_path)
+
+    def test_lancedb_chunk_count_mismatch_raises(self, tmp_path: Path) -> None:
+        _build_valid_fixture(tmp_path)
+        store = LanceDBRetrievalStore(tmp_path / "lancedb")
+        section = SectionChunk(
+            doc_id=uuid4(),
+            section_title="Extra",
+            text="stale row",
+            token_count=2,
+        )
+        store.index_section_chunk(section, [0.9, 0.8, 0.7])
+        store.save_metadata(
+            {
+                "embedding_model": "nomic-embed-text",
+                "embedding_base_url": "http://localhost:11434/v1",
+                "embedding_dimensions": 3,
+                "chunk_count": store.chunk_count,
+            }
+        )
+        with pytest.raises(MalformedProcessedArtifactError, match="chunk count"):
+            load_processed_corpus(tmp_path)
+
+    def test_incompatible_index_model_raises(self, tmp_path: Path) -> None:
+        _build_valid_fixture(tmp_path)
+        store = LanceDBRetrievalStore(tmp_path / "lancedb")
+        store.save_metadata(
+            {
+                "embedding_model": "different-model",
+                "embedding_base_url": "http://localhost:11434/v1",
+                "embedding_dimensions": 3,
+                "chunk_count": store.chunk_count,
+            }
+        )
+        with pytest.raises(IncompatibleIndexError, match="different-model"):
             load_processed_corpus(tmp_path)

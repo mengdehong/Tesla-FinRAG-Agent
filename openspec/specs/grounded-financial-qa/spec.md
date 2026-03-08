@@ -13,7 +13,7 @@ The question-answering pipeline SHALL convert a user question into a structured 
 - **THEN** the system produces a query plan that records those time constraints for downstream retrieval and calculation
 
 ### Requirement: Hybrid evidence retrieval
-The question-answering pipeline SHALL retrieve evidence by combining keyword-aware search, semantic similarity, and metadata filters over normalized filing chunks and fact records.
+The question-answering pipeline SHALL retrieve evidence by combining keyword-aware search, semantic similarity from the persisted LanceDB vector index, and metadata filters over normalized filing chunks and fact records.
 
 #### Scenario: Match an exact financial term
 - **WHEN** a user question includes a specific financial term such as "Free Cash Flow"
@@ -22,6 +22,10 @@ The question-answering pipeline SHALL retrieve evidence by combining keyword-awa
 #### Scenario: Apply hard period filters
 - **WHEN** the query plan contains explicit period or form filters
 - **THEN** the retrieval system restricts candidate evidence using those filters before answer assembly
+
+#### Scenario: Use the persisted vector index
+- **WHEN** the query pipeline executes semantic retrieval for a processed corpus that includes a LanceDB index
+- **THEN** the vector lane reads from the persisted LanceDB store instead of rebuilding an in-memory corpus index for that process
 
 ### Requirement: Explicit financial calculation
 The question-answering pipeline SHALL perform ranking, aggregation, and period-over-period numeric reasoning in a dedicated calculation step rather than relying on free-form language generation to compute results.
@@ -36,3 +40,4 @@ The question-answering pipeline SHALL return an answer payload that includes ans
 #### Scenario: Return a traceable answer
 - **WHEN** the system answers a complex financial question
 - **THEN** the returned payload includes the supporting evidence references needed for UI display and failure analysis
+

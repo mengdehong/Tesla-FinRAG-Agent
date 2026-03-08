@@ -8,6 +8,7 @@ from tesla_finrag.retrieval.in_memory import (
     InMemoryQueryPlanRepository,
     InMemoryRetrievalStore,
 )
+from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
 from tesla_finrag.retrieval.lexical import LexicalSearcher
 from tesla_finrag.retrieval.vector import VectorSearcher
 
@@ -18,6 +19,7 @@ __all__ = [
     "InMemoryFactsRepository",
     "InMemoryQueryPlanRepository",
     "InMemoryRetrievalStore",
+    "LanceDBRetrievalStore",
     "LexicalSearcher",
     "VectorSearcher",
 ]

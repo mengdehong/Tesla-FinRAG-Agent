@@ -59,6 +59,24 @@ class AppSettings(BaseSettings):
         le=300,
         description="Request timeout in seconds for OpenAI API calls.",
     )
+    ollama_base_url: str = Field(
+        "http://localhost:11434/v1",
+        description="Base URL for the local Ollama OpenAI-compatible endpoint.",
+    )
+    ollama_chat_model: str = Field(
+        "qwen2.5:7b-instruct",
+        description="Default Ollama chat model used for local answer generation.",
+    )
+    ollama_embedding_model: str = Field(
+        "nomic-embed-text",
+        description="Default Ollama embedding model used for local vectorization.",
+    )
+    ollama_timeout_seconds: int = Field(
+        60,
+        ge=1,
+        le=300,
+        description="Request timeout in seconds for Ollama API calls.",
+    )
 
     # ── Vector / fact store ───────────────────────────────────────────────────
     processed_data_dir: str = Field(
@@ -68,6 +86,21 @@ class AppSettings(BaseSettings):
     lancedb_uri: str = Field(
         "data/processed/lancedb",
         description="File-system path or URI for the LanceDB database.",
+    )
+    indexing_embedding_model: str = Field(
+        "nomic-embed-text",
+        description="Embedding model used to index corpus chunks in LanceDB.",
+    )
+    indexing_embedding_base_url: str = Field(
+        "http://localhost:11434/v1",
+        description="Base URL for the embedding API used during indexing.",
+    )
+    indexing_embedding_api_key: str = Field(
+        "",
+        description=(
+            "Optional API key for the shared indexing embedding backend. "
+            "Defaults to an Ollama-safe placeholder when left blank for local indexing."
+        ),
     )
 
     # ── Retrieval tuning ──────────────────────────────────────────────────────

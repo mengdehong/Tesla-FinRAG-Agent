@@ -5,12 +5,15 @@ description = "Financial RAG agent for Tesla SEC filings (10-K/10-Q)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx[socks]>=0.28.1",
     "openai>=2.26.0",
     "pdfplumber>=0.11.9",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "python-dotenv>=1.2.2",
     "streamlit>=1.45.0",
+    "lancedb>=0.20.0",
+    "pyarrow>=15.0.0",
 ]
 
 [dependency-groups]
@@ -31,6 +34,10 @@ packages = ["src/tesla_finrag"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: marks integration tests that rely on external data or slow processes",
+    "slow: marks tests as slow",
+]
 
 [tool.ruff]
 line-length = 100

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Sequence
 
@@ -62,13 +61,12 @@ def _run_ingest(args: argparse.Namespace) -> int:
 
     raw_dir = Path(args.raw_dir)
     output_dir = Path(args.output_dir)
-    workers = _resolve_ingest_workers(args.workers)
-
     configure_cli_logging()
-    print(f"Running ingestion: {raw_dir} -> {output_dir} (workers={workers})")
+    worker_label = args.workers if args.workers > 0 else "auto"
+    print(f"Running ingestion: {raw_dir} -> {output_dir} (workers={worker_label})")
 
     try:
-        summary = run_pipeline(raw_dir=raw_dir, output_dir=output_dir, workers=workers)
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=output_dir, workers=args.workers)
     except Exception as exc:
         print(f"Ingestion failed: {exc}", file=sys.stderr)
         return 1
@@ -82,13 +80,20 @@ def _run_ingest(args: argparse.Namespace) -> int:
     print(completion_label)
     print("=" * 60)
     print(f"Output location:    {output_dir.resolve()}")
-    print(f"Filings written:    {summary.get('filings', 0)}")
+    print(f"Filings total:      {summary.get('filings', 0)}")
+    print(f"Reprocessed:        {summary.get('reprocessed_filings', 0)}")
+    print(f"Reused:             {summary.get('reused_filings', 0)}")
     print(f"Section chunks:     {summary.get('section_chunks', 0)}")
     print(f"Table chunks:       {summary.get('table_chunks', 0)}")
     print(f"Fact records:       {summary.get('fact_records', 0)}")
+    print(f"Facts reused:       {'yes' if summary.get('facts_reused') else 'no'}")
     print(f"Manifest available: {summary.get('manifest_available', 0)}")
     print(f"Manifest gaps:      {summary.get('manifest_gaps', 0)}")
     print(f"Failed filings:     {failed_filings}")
+    print(f"LanceDB index:      {summary.get('lancedb_status', 'n/a')}")
+    print(f"LanceDB path:       {summary.get('lancedb_path', 'n/a')}")
+    print(f"LanceDB chunks:     {summary.get('lancedb_chunks_indexed', 0)}")
+    print(f"Workers used:       {summary.get('workers', 0)}")
     print(f"Elapsed seconds:    {summary.get('elapsed_seconds', 0)}")
 
     gap_details = summary.get("gap_details", [])
@@ -114,14 +119,6 @@ def _run_ingest(args: argparse.Namespace) -> int:
 
     print("=" * 60)
     return 0
-
-
-def _resolve_ingest_workers(requested_workers: int) -> int:
-    """Resolve the CLI worker count, using auto-parallelism by default."""
-    if requested_workers > 0:
-        return requested_workers
-    return max(1, min(4, os.cpu_count() or 1))
-
 
 def _run_ask(args: argparse.Namespace) -> int:
     """Execute the ``ask`` subcommand."""
@@ -218,7 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-p",
         default="local",
         choices=[m.value for m in _get_provider_modes()],
-        help="Provider mode: 'local' (default) or 'openai-compatible'.",
+        help=(
+            "Provider mode: 'local' (default, Ollama-backed) "
+            "or 'openai-compatible' (remote)."
+        ),
     )
     ask_parser.add_argument(
         "--json",

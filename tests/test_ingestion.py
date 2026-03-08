@@ -1579,6 +1579,96 @@ class TestPipeline:
         assert row_count == len(sections)
         assert provider.batch_sizes == [64, 6]
 
+    def test_build_lancedb_index_writes_rows_in_batches_without_per_chunk_upserts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import _build_lancedb_index
+        from tesla_finrag.ingestion.state import FilingStateEntry, IngestionState
+        from tesla_finrag.ingestion.writers import write_filing_bundle
+        from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
+
+        filing = FilingDocument(
+            filing_type=FilingType.QUARTERLY,
+            period_end=date(2025, 3, 31),
+            fiscal_year=2025,
+            fiscal_quarter=1,
+            accession_number="0000950170-2025-03",
+            filed_at=date(2025, 4, 15),
+            source_path="data/raw/Tesla_2025_Q1_10-Q.pdf",
+        )
+        sections = [
+            SectionChunk(
+                doc_id=filing.doc_id,
+                section_title=f"Section {index}",
+                text=f"short text {index}",
+                token_count=3,
+            )
+            for index in range(10)
+        ]
+        output_dir = tmp_path / "processed"
+        write_filing_bundle(filing, sections, [], output_dir)
+
+        class BatchTrackingProvider:
+            embedding_model = "nomic-embed-text"
+            base_url = "http://localhost:11434/v1"
+            info = SimpleNamespace(
+                provider_name="shared-indexing-backend",
+                embedding_model="nomic-embed-text",
+                base_url="http://localhost:11434/v1",
+            )
+
+            def embed_texts(self, texts: list[str]) -> list[list[float]]:
+                return [[0.1, 0.2, 0.3] for _ in texts]
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.IndexingEmbeddingProvider.from_settings",
+            lambda: BatchTrackingProvider(),
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._INDEX_WRITE_BATCH_SIZE",
+            4,
+        )
+
+        batch_sizes: list[int] = []
+        original_add_rows = LanceDBRetrievalStore.add_rows
+
+        def tracking_add_rows(self, rows: list[dict[str, object]]) -> None:
+            batch_sizes.append(len(rows))
+            original_add_rows(self, rows)
+
+        def fail_index_chunk_segments(*args, **kwargs) -> None:
+            raise AssertionError("per-chunk upserts should not be used during batched indexing")
+
+        monkeypatch.setattr(LanceDBRetrievalStore, "add_rows", tracking_add_rows)
+        monkeypatch.setattr(
+            LanceDBRetrievalStore,
+            "index_chunk_segments",
+            fail_index_chunk_segments,
+        )
+
+        state = IngestionState(
+            filings={
+                str(filing.doc_id): FilingStateEntry(
+                    doc_id=filing.doc_id,
+                    source_path=filing.source_path,
+                    source_fingerprint="fingerprint",
+                    parser_fingerprint="parser",
+                    section_chunk_count=len(sections),
+                    table_chunk_count=0,
+                )
+            }
+        )
+
+        row_count = _build_lancedb_index(
+            output_dir,
+            state,
+            refreshed_doc_ids={filing.doc_id},
+            removed_doc_ids=set(),
+        )
+
+        assert row_count == len(sections)
+        assert batch_sizes == [4, 4, 2]
+
     def test_build_lancedb_index_reports_unindexable_chunk_diagnostics(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

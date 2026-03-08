@@ -503,6 +503,7 @@ def _run_filing_ingestion_jobs(
 # ---------------------------------------------------------------------------
 
 _EMBED_BATCH_SIZE = 64
+_INDEX_WRITE_BATCH_SIZE = 1024
 _INDEX_SCHEMA_VERSION = 2
 _INDEX_PROGRESS_LOG_INTERVAL = 100
 
@@ -731,24 +732,60 @@ def _build_lancedb_index(
                 len(batch),
             )
 
+    total_vector_rows = sum(len(segments) for _, segments in chunk_segments)
+    total_write_batches = (
+        max(1, (total_vector_rows + _INDEX_WRITE_BATCH_SIZE - 1) // _INDEX_WRITE_BATCH_SIZE)
+        if total_vector_rows > 0
+        else 0
+    )
     embedding_cursor = 0
+    pending_rows: list[dict[str, object]] = []
+    write_batch_index = 0
+    write_phase_start = monotonic()
+
+    def flush_pending_rows(*, chunk_index: int, vector_row_count: int) -> None:
+        nonlocal pending_rows, write_batch_index
+        if not pending_rows:
+            return
+
+        batch_rows = pending_rows
+        pending_rows = []
+        store.add_rows(batch_rows)
+        write_batch_index += 1
+        logger.info(
+            "Indexed rows batch %d/%d (%d rows, chunks=%d/%d, vector rows=%d, elapsed=%.1fs)",
+            write_batch_index,
+            total_write_batches,
+            len(batch_rows),
+            chunk_index,
+            chunk_count,
+            vector_row_count,
+            monotonic() - write_phase_start,
+        )
+
     for index, (chunk, segments) in enumerate(chunk_segments, start=1):
         next_cursor = embedding_cursor + len(segments)
-        store.index_chunk_segments(
+        chunk_rows = store.build_chunk_segment_rows(
             chunk,
             segments,
             all_embeddings[embedding_cursor:next_cursor],
-            replace_existing=True,
         )
         embedding_cursor = next_cursor
+        pending_rows.extend(chunk_rows)
+
         if index == 1 or index == chunk_count or index % _INDEX_PROGRESS_LOG_INTERVAL == 0:
             logger.info(
-                "Indexed chunk %d/%d (%0.1f%%, vector rows=%d)",
+                "Prepared chunk %d/%d (%0.1f%%, buffered rows=%d, vector rows=%d)",
                 index,
                 chunk_count,
                 (index / chunk_count) * 100,
+                len(pending_rows),
                 embedding_cursor,
             )
+        if len(pending_rows) >= _INDEX_WRITE_BATCH_SIZE:
+            flush_pending_rows(chunk_index=index, vector_row_count=embedding_cursor)
+
+    flush_pending_rows(chunk_index=chunk_count, vector_row_count=embedding_cursor)
 
     store.save_metadata(
         {

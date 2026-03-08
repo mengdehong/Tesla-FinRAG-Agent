@@ -75,6 +75,52 @@ class LanceDBRetrievalStore(RetrievalStore):
         else:
             self._table.add(data)
 
+    @staticmethod
+    def build_chunk_segment_rows(
+        chunk: SectionChunk | TableChunk,
+        segments: list[ChunkSegment],
+        embeddings: list[list[float]],
+    ) -> list[dict[str, object]]:
+        """Materialize LanceDB rows for one processed source chunk."""
+        if len(segments) != len(embeddings):
+            raise ValueError(
+                "segments/embeddings length mismatch: "
+                f"{len(segments)} != {len(embeddings)}"
+            )
+        if not segments:
+            return []
+
+        source_chunk_id = str(chunk.chunk_id)
+        source_doc_id = str(chunk.doc_id)
+        source_kind = "section" if isinstance(chunk, SectionChunk) else "table"
+
+        rows: list[dict[str, object]] = []
+        for segment, embedding in zip(segments, embeddings):
+            row_chunk_id = f"{source_chunk_id}:{segment.segment_index}"
+            rows.append(
+                {
+                    "chunk_id": row_chunk_id,
+                    "doc_id": source_doc_id,
+                    "kind": source_kind,
+                    "section_title": chunk.section_title,
+                    "display_text": segment.text,
+                    "source_chunk_id": source_chunk_id,
+                    "source_doc_id": source_doc_id,
+                    "source_kind": source_kind,
+                    "segment_id": row_chunk_id,
+                    "segment_index": segment.segment_index,
+                    "segment_count": segment.segment_count,
+                    "vector": embedding,
+                }
+            )
+        return rows
+
+    def add_rows(self, rows: list[dict[str, object]]) -> None:
+        """Append a batch of pre-built LanceDB rows."""
+        if not rows:
+            return
+        self._ensure_table(rows)
+
     def delete_doc(self, doc_id: UUID | str) -> None:
         """Remove all rows for a filing from the persisted index."""
         if self._table is None:
@@ -133,17 +179,10 @@ class LanceDBRetrievalStore(RetrievalStore):
         replace_existing: bool = True,
     ) -> None:
         """Insert segmented vector rows for one processed source chunk."""
-        if len(segments) != len(embeddings):
-            raise ValueError(
-                "segments/embeddings length mismatch: "
-                f"{len(segments)} != {len(embeddings)}"
-            )
-        if not segments:
-            return
-
         source_chunk_id = str(chunk.chunk_id)
-        source_doc_id = str(chunk.doc_id)
-        source_kind = "section" if isinstance(chunk, SectionChunk) else "table"
+        rows = self.build_chunk_segment_rows(chunk, segments, embeddings)
+        if not rows:
+            return
 
         if replace_existing and self._table is not None:
             try:
@@ -154,26 +193,7 @@ class LanceDBRetrievalStore(RetrievalStore):
                 # Backward-compatible fallback for old schema rows.
                 self._table.delete(f'chunk_id = "{source_chunk_id}"')
 
-        rows: list[dict[str, object]] = []
-        for segment, embedding in zip(segments, embeddings):
-            row_chunk_id = f"{source_chunk_id}:{segment.segment_index}"
-            rows.append(
-                {
-                    "chunk_id": row_chunk_id,
-                    "doc_id": source_doc_id,
-                    "kind": source_kind,
-                    "section_title": chunk.section_title,
-                    "display_text": segment.text,
-                    "source_chunk_id": source_chunk_id,
-                    "source_doc_id": source_doc_id,
-                    "source_kind": source_kind,
-                    "segment_id": row_chunk_id,
-                    "segment_index": segment.segment_index,
-                    "segment_count": segment.segment_count,
-                    "vector": embedding,
-                }
-            )
-        self._ensure_table(rows)
+        self.add_rows(rows)
 
     def search(
         self,

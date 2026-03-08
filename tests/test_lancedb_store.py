@@ -227,6 +227,34 @@ class TestLanceDBRetrievalStore:
         assert {row["source_chunk_id"] for row in lineage_rows} == {str(chunk.chunk_id)}
         assert {row["segment_index"] for row in lineage_rows} == {0, 1}
 
+    def test_add_rows_persists_prebuilt_segment_rows(
+        self,
+        lancedb_dir: Path,
+        sample_embedding: list[float],
+    ) -> None:
+        store = LanceDBRetrievalStore(lancedb_dir)
+        chunk = SectionChunk(
+            doc_id=UUID("00000000-0000-0000-0000-000000000011"),
+            section_title="MD&A",
+            text="Long narrative chunk",
+            token_count=3,
+        )
+        rows = store.build_chunk_segment_rows(
+            chunk,
+            [
+                ChunkSegment(text="segment-0", segment_index=0, segment_count=2),
+                ChunkSegment(text="segment-1", segment_index=1, segment_count=2),
+            ],
+            [sample_embedding, sample_embedding],
+        )
+
+        store.add_rows(rows)
+
+        assert store.chunk_count == 2
+        hits = store.search(sample_embedding, top_k=5)
+        assert len(hits) == 1
+        assert hits[0][0].chunk_id == chunk.chunk_id
+
     def test_search_overfetches_until_top_k_unique_source_chunks(
         self,
         lancedb_dir: Path,

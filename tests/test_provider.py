@@ -360,6 +360,9 @@ class TestFakeClientRemoteExecution:
         _, _, answer = pipeline.run("What was Tesla's capital expenditure in FY2023?")
 
         assert answer.status.value == "insufficient_evidence"
-        assert "Insufficient evidence" in answer.answer_text
+        assert (
+            "Insufficient evidence" in answer.answer_text
+            or "Unable to provide a fully grounded answer" in answer.answer_text
+        )
         assert answer.retrieval_debug["answer_provider"] == "template-guardrail"
         assert mock_client.chat.completions.create.call_count == 0

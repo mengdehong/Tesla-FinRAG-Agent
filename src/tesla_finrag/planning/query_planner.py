@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from tesla_finrag.models import QueryPlan, QueryType
+from tesla_finrag.models import PeriodSemantics, QueryPlan, QueryType, SubQuery
 from tesla_finrag.services import QueryPlanningService
 
 # ---------------------------------------------------------------------------
@@ -205,6 +205,10 @@ def extract_metrics(question: str) -> list[str]:
     matched before the shorter "cash" alias.  Once an alias is matched
     its span is masked to prevent shorter aliases from matching within
     the same text.
+
+    Uses exact canonical concept precedence: if a longer, more specific
+    alias matches first, shorter generic aliases for different concepts
+    are suppressed in the matched region.
     """
     lower = question.lower()
     found: list[str] = []
@@ -379,6 +383,115 @@ def extract_keywords(question: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Period semantics classification
+# ---------------------------------------------------------------------------
+
+
+def classify_period_semantics(
+    period: date,
+    question: str,
+) -> PeriodSemantics:
+    """Classify a period-end date into its temporal semantics.
+
+    Uses the period-end month and question context to distinguish
+    annual cumulative, quarterly standalone, and other semantics.
+    """
+    lower = question.lower()
+
+    # A December 31 period-end that matches FY pattern or standalone year
+    if period.month == 12 and period.day == 31:
+        # Check if a quarter pattern explicitly targets Q4
+        q4_explicit = bool(re.search(r"[Qq]4\s*[-/]?\s*" + str(period.year), lower)) or bool(
+            re.search(str(period.year) + r"\s*[-/]?\s*[Qq]4", lower)
+        )
+        if q4_explicit:
+            return PeriodSemantics.QUARTERLY_STANDALONE
+        return PeriodSemantics.ANNUAL_CUMULATIVE
+
+    # Standard quarter-end dates (March, June, September)
+    if period.month in (3, 6, 9) and period.day in (30, 31):
+        return PeriodSemantics.QUARTERLY_STANDALONE
+
+    return PeriodSemantics.UNKNOWN
+
+
+def build_period_semantics_map(
+    periods: list[date],
+    question: str,
+) -> dict[str, PeriodSemantics]:
+    """Build a mapping from ISO date strings to their period semantics."""
+    return {p.isoformat(): classify_period_semantics(p, question) for p in periods}
+
+
+# ---------------------------------------------------------------------------
+# Sub-query decomposition
+# ---------------------------------------------------------------------------
+
+_COMPARISON_MULTI_PERIOD = re.compile(
+    r"\b(compar\w*|differ\w*|chang\w*|versus|vs\.?|from\b.*\bto\b|between)\b",
+    re.IGNORECASE,
+)
+_RANKING_MULTI_PERIOD = re.compile(
+    r"\b(highest|lowest|most|least|rank\w*|top|bottom|best|worst|largest|smallest|"
+    r"which\s+quarter|which\s+year)\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_decomposition(question: str, periods: list[date]) -> bool:
+    """Determine if a question requires multi-period decomposition."""
+    _ = question
+    return len(periods) >= 2
+
+
+def _build_sub_queries(
+    question: str,
+    periods: list[date],
+    concepts: list[str],
+    period_sem_map: dict[str, PeriodSemantics],
+) -> list[SubQuery]:
+    """Build period-aware sub-queries for multi-period questions.
+
+    Each required period gets its own sub-query so retrieval can
+    apply hard scope constraints per period.
+    """
+    if not periods:
+        return []
+
+    sub_queries: list[SubQuery] = []
+    for period in periods:
+        sem = period_sem_map.get(period.isoformat(), PeriodSemantics.UNKNOWN)
+        period_label = _period_label(period, sem)
+        if concepts:
+            concept_labels = [c.split(":")[-1] for c in concepts]
+            text = f"{', '.join(concept_labels)} for {period_label}"
+        else:
+            text = f"{question} for {period_label}"
+
+        sub_queries.append(
+            SubQuery(
+                text=text,
+                target_period=period,
+                target_concepts=concepts,
+                period_semantics=sem,
+            )
+        )
+    return sub_queries
+
+
+def _period_label(period: date, semantics: PeriodSemantics) -> str:
+    """Human-readable label for a period based on semantics."""
+    year = period.year
+    if semantics == PeriodSemantics.ANNUAL_CUMULATIVE:
+        return f"FY{year}"
+    month_to_q = {3: 1, 6: 2, 9: 3, 12: 4}
+    quarter = month_to_q.get(period.month)
+    if quarter:
+        return f"Q{quarter} {year}"
+    return str(period)
+
+
+# ---------------------------------------------------------------------------
 # Main planner
 # ---------------------------------------------------------------------------
 
@@ -403,12 +516,22 @@ class RuleBasedQueryPlanner(QueryPlanningService):
             or (bool(metrics) and bool(periods))  # metric + period = factual lookup
         )
 
+        # Build period semantics map
+        period_sem_map = build_period_semantics_map(periods, question)
+
+        # Decompose into sub-queries for multi-period questions
+        sub_queries: list[SubQuery] = []
+        if _needs_decomposition(question, periods):
+            sub_queries = _build_sub_queries(question, periods, metrics, period_sem_map)
+
         return QueryPlan(
             original_query=question,
             query_type=query_type,
             sub_questions=[question],
+            sub_queries=sub_queries,
             retrieval_keywords=keywords,
             required_periods=periods,
+            period_semantics=period_sem_map,
             required_concepts=metrics,
             needs_calculation=needs_calculation,
         )

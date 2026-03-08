@@ -2,6 +2,10 @@
 
 Implements :class:`RetrievalService` by fusing results from multiple
 search strategies using Reciprocal Rank Fusion (RRF).
+
+When a query plan contains period-aware sub-queries, retrieval is
+executed per-period to guarantee balanced temporal coverage before
+merging into a single evidence bundle.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from tesla_finrag.models import (
     RetrievalResult,
     SearchMode,
     SectionChunk,
+    SubQuery,
     TableChunk,
 )
 from tesla_finrag.repositories import CorpusRepository, FactsRepository, RetrievalStore
@@ -141,6 +146,25 @@ class HybridRetrievalService(RetrievalService):
             parts.extend(plan.required_concepts)
         return " ".join(parts)
 
+    def _resolve_chunks(
+        self, fused: list[RetrievalResult]
+    ) -> tuple[list[SectionChunk], list[TableChunk], dict[str, float]]:
+        """Resolve fused retrieval results to actual chunk objects."""
+        section_chunks: list[SectionChunk] = []
+        table_chunks: list[TableChunk] = []
+        retrieval_scores: dict[str, float] = {}
+
+        for result in fused:
+            retrieval_scores[str(result.chunk_id)] = result.score
+            chunk = self._lookup_chunk(result)
+            if chunk is not None:
+                if result.chunk_type == ChunkKind.SECTION:
+                    section_chunks.append(chunk)  # type: ignore[arg-type]
+                elif result.chunk_type == ChunkKind.TABLE:
+                    table_chunks.append(chunk)  # type: ignore[arg-type]
+
+        return section_chunks, table_chunks, retrieval_scores
+
     def _get_doc_ids_for_plan(self, plan: QueryPlan) -> list[UUID] | None:
         """Resolve period filters to doc_ids, or None for no filter."""
         if not plan.required_periods:
@@ -171,6 +195,10 @@ class HybridRetrievalService(RetrievalService):
     def retrieve(self, plan: QueryPlan) -> EvidenceBundle:
         """Retrieve evidence by fusing lexical, vector, and fact results.
 
+        When the plan contains period-aware sub-queries, retrieval is
+        executed per-period to ensure balanced temporal coverage before
+        merging into the final bundle.
+
         Args:
             plan: Structured query plan from the planning service.
 
@@ -179,6 +207,13 @@ class HybridRetrievalService(RetrievalService):
         """
         self._ensure_lexical_index()
 
+        if plan.sub_queries:
+            return self._retrieve_per_period(plan)
+
+        return self._retrieve_single_pass(plan)
+
+    def _retrieve_single_pass(self, plan: QueryPlan) -> EvidenceBundle:
+        """Original single-pass retrieval for simple questions."""
         query_text = self._build_query_text(plan)
         doc_ids = self._get_doc_ids_for_plan(plan)
 
@@ -207,24 +242,7 @@ class HybridRetrievalService(RetrievalService):
             fused = []
 
         # --- Collect chunks for the bundle ---
-        section_chunks: list[SectionChunk] = []
-        table_chunks: list[TableChunk] = []
-        retrieval_scores: dict[str, float] = {}
-
-        for result in fused:
-            retrieval_scores[str(result.chunk_id)] = result.score
-            if result.chunk_type == ChunkKind.SECTION:
-                for filing in self._corpus.list_filings():
-                    for chunk in self._corpus.get_section_chunks(filing.doc_id):
-                        if chunk.chunk_id == result.chunk_id:
-                            section_chunks.append(chunk)
-                            break
-            elif result.chunk_type == ChunkKind.TABLE:
-                for filing in self._corpus.list_filings():
-                    for chunk in self._corpus.get_table_chunks(filing.doc_id):
-                        if chunk.chunk_id == result.chunk_id:
-                            table_chunks.append(chunk)
-                            break
+        section_chunks, table_chunks, retrieval_scores = self._resolve_chunks(fused)
 
         return EvidenceBundle(
             plan_id=plan.plan_id,
@@ -237,7 +255,144 @@ class HybridRetrievalService(RetrievalService):
                 "vector_hits": len(vector_results),
                 "fact_hits": len(facts),
                 "fused_hits": len(fused),
-                "query_text": query_text,
-                "doc_id_filter": [str(d) for d in doc_ids] if doc_ids is not None else None,
+                "query_text": self._build_query_text(plan),
+                "doc_id_filter": [str(d) for d in (self._get_doc_ids_for_plan(plan) or [])],
+                "retrieval_mode": "single_pass",
             },
         )
+
+    def _retrieve_per_period(self, plan: QueryPlan) -> EvidenceBundle:
+        """Execute retrieval per sub-query (period) then merge results.
+
+        Each sub-query gets a dedicated retrieval pass scoped to its
+        target period, guaranteeing balanced temporal coverage.
+        """
+        all_section_chunks: list[SectionChunk] = []
+        all_table_chunks: list[TableChunk] = []
+        all_facts: list[FactRecord] = []
+        all_scores: dict[str, float] = {}
+        seen_chunk_ids: set[UUID] = set()
+        seen_fact_ids: set[UUID] = set()
+        per_period_meta: dict[str, dict] = {}
+
+        # How many results per sub-query: divide final_top_k evenly
+        per_period_top_k = max(self._final_top_k // len(plan.sub_queries), 3)
+
+        for sq in plan.sub_queries:
+            doc_ids = self._get_doc_ids_for_sub_query(sq)
+            scope_miss = sq.target_period is not None and doc_ids == []
+
+            # Build focused query text from sub-query
+            query_text = sq.text
+
+            # --- Lexical ---
+            if scope_miss:
+                lexical_results = []
+            else:
+                lexical_results = self._lexical.search(
+                    query_text, top_k=self._lexical_top_k, doc_ids=doc_ids
+                )
+
+            # --- Vector ---
+            vector_results: list[RetrievalResult] = []
+            if not scope_miss and self._vector and self._embed_fn and callable(self._embed_fn):
+                query_embedding = self._embed_fn(query_text)
+                if query_embedding:
+                    vector_results = self._vector.search(
+                        query_embedding, top_k=self._vector_top_k, doc_ids=doc_ids
+                    )
+
+            # --- Facts for this period ---
+            period_facts = self._get_facts_for_sub_query(sq)
+
+            # --- Fusion for this period ---
+            lanes = [lane for lane in [lexical_results, vector_results] if lane]
+            if lanes:
+                fused = _reciprocal_rank_fusion(lanes)[:per_period_top_k]
+            else:
+                fused = []
+
+            # Resolve and merge (dedup)
+            for result in fused:
+                if result.chunk_id in seen_chunk_ids:
+                    continue
+                seen_chunk_ids.add(result.chunk_id)
+                all_scores[str(result.chunk_id)] = result.score
+                chunk = self._lookup_chunk(result)
+                if chunk is not None:
+                    if result.chunk_type == ChunkKind.SECTION:
+                        all_section_chunks.append(chunk)  # type: ignore[arg-type]
+                    else:
+                        all_table_chunks.append(chunk)  # type: ignore[arg-type]
+
+            for fact in period_facts:
+                if fact.fact_id not in seen_fact_ids:
+                    seen_fact_ids.add(fact.fact_id)
+                    all_facts.append(fact)
+
+            period_key = sq.target_period.isoformat() if sq.target_period else "none"
+            per_period_meta[period_key] = {
+                "lexical_hits": len(lexical_results),
+                "vector_hits": len(vector_results),
+                "fact_hits": len(period_facts),
+                "fused_hits": len(fused),
+                "query_text": query_text,
+                "doc_id_filter": [str(d) for d in (doc_ids or [])],
+                "scope_miss": scope_miss,
+            }
+
+        return EvidenceBundle(
+            plan_id=plan.plan_id,
+            section_chunks=all_section_chunks,
+            table_chunks=all_table_chunks,
+            facts=all_facts,
+            retrieval_scores=all_scores,
+            metadata={
+                "retrieval_mode": "per_period",
+                "sub_query_count": len(plan.sub_queries),
+                "per_period": per_period_meta,
+                "fact_hits": len(all_facts),
+                "fused_hits": sum(m.get("fused_hits", 0) for m in per_period_meta.values()),
+            },
+        )
+
+    def _get_doc_ids_for_sub_query(self, sq: SubQuery) -> list[UUID] | None:
+        """Resolve a sub-query's target period to doc_ids."""
+        if sq.target_period is None:
+            return None
+        filings = self._corpus.list_filings()
+        matching = [f.doc_id for f in filings if f.period_end == sq.target_period]
+        # IMPORTANT: fail-closed for hard period scoping.
+        # An empty list means "target period is known but absent" and must
+        # not degrade into unscoped retrieval.
+        return matching
+
+    def _get_facts_for_sub_query(self, sq: SubQuery) -> list[FactRecord]:
+        """Retrieve facts matching a sub-query's concepts and period."""
+        facts: list[FactRecord] = []
+        seen: set[UUID] = set()
+        if sq.target_concepts:
+            for concept in sq.target_concepts:
+                for fact in self._facts.get_facts(concept=concept, period_end=sq.target_period):
+                    if fact.fact_id not in seen:
+                        seen.add(fact.fact_id)
+                        facts.append(fact)
+        elif sq.target_period:
+            for fact in self._facts.get_facts(period_end=sq.target_period):
+                if fact.fact_id not in seen:
+                    seen.add(fact.fact_id)
+                    facts.append(fact)
+        return facts
+
+    def _lookup_chunk(self, result: RetrievalResult) -> SectionChunk | TableChunk | None:
+        """Find the actual chunk object for a retrieval result."""
+        for filing in self._corpus.list_filings():
+            if result.chunk_type == ChunkKind.SECTION:
+                for chunk in self._corpus.get_section_chunks(filing.doc_id):
+                    if chunk.chunk_id == result.chunk_id:
+                        return chunk
+            elif result.chunk_type == ChunkKind.TABLE:
+                for chunk in self._corpus.get_table_chunks(filing.doc_id):
+                    if chunk.chunk_id == result.chunk_id:
+                        return chunk
+        return None

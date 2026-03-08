@@ -3,6 +3,10 @@
 Aligns narrative chunks, table chunks, and fact records around shared
 periods and metrics so the answer composer receives a coherent evidence
 set rather than a flat list of unrelated hits.
+
+When a plan contains period-aware sub-queries, linking validates
+that each required period has adequate coverage and annotates the
+metadata with per-period evidence counts.
 """
 
 from __future__ import annotations
@@ -13,6 +17,8 @@ from uuid import UUID
 
 from tesla_finrag.models import (
     EvidenceBundle,
+    FactRecord,
+    PeriodSemantics,
     SectionChunk,
     TableChunk,
 )
@@ -77,6 +83,7 @@ class EvidenceLinker:
         *,
         required_concepts: list[str] | None = None,
         required_periods: list[date] | None = None,
+        period_semantics: dict[str, PeriodSemantics] | None = None,
     ) -> EvidenceBundle:
         """Enrich an evidence bundle by linking across periods and metrics.
 
@@ -84,6 +91,7 @@ class EvidenceLinker:
             bundle: The raw evidence bundle from hybrid retrieval.
             required_concepts: XBRL concepts to look up in the facts store.
             required_periods: If given, restrict linking to these periods.
+            period_semantics: Optional period semantics map from the plan.
 
         Returns:
             A new :class:`EvidenceBundle` with additional linked evidence.
@@ -139,6 +147,30 @@ class EvidenceLinker:
                         existing_chunk_ids.add(tbl.chunk_id)
                         scores[str(tbl.chunk_id)] = 0.0  # linked, not retrieved
 
+        # Build per-period coverage for debug metadata
+        period_coverage = self._compute_period_coverage(
+            required_periods or [],
+            required_concepts or [],
+            facts,
+        )
+        # Determine which periods lack required evidence.
+        # For concept-scoped queries, a period is missing unless *all* required
+        # concepts are present (not just any fact in that period).
+        missing_periods: list[str] = []
+        missing_concepts_by_period: dict[str, list[str]] = {}
+        for period in required_periods or []:
+            key = period.isoformat()
+            coverage = period_coverage.get(key, {})
+            missing_concepts = list(coverage.get("missing_concepts", []))
+            if missing_concepts:
+                missing_concepts_by_period[key] = missing_concepts
+
+            if required_concepts:
+                if not coverage.get("has_required_concepts", False):
+                    missing_periods.append(key)
+            elif not coverage.get("has_facts", False):
+                missing_periods.append(key)
+
         return EvidenceBundle(
             plan_id=bundle.plan_id,
             section_chunks=section_chunks,
@@ -150,6 +182,9 @@ class EvidenceLinker:
                 "linked_periods": sorted(str(p) for p in relevant_periods),
                 "linked_facts_count": len(facts) - len(bundle.facts),
                 "linked_tables_count": len(table_chunks) - len(bundle.table_chunks),
+                "period_coverage": period_coverage,
+                "missing_periods": missing_periods,
+                "missing_concepts_by_period": missing_concepts_by_period,
             },
         )
 
@@ -181,3 +216,35 @@ class EvidenceLinker:
             if f"{label_lower}s" in searchable:
                 return True
         return False
+
+    @staticmethod
+    def _compute_period_coverage(
+        required_periods: list[date],
+        required_concepts: list[str],
+        facts: list[FactRecord],
+    ) -> dict[str, dict]:
+        """Compute per-period evidence coverage for debug metadata.
+
+        Returns a dict mapping ISO date strings to coverage info:
+        ``{"has_facts": bool, "concept_count": int, "matched_concepts": [...]}``.
+        """
+        coverage: dict[str, dict] = {}
+        for period in required_periods:
+            period_facts = [f for f in facts if f.period_end == period]
+            matched_concepts = (
+                sorted({f.concept for f in period_facts if f.concept in required_concepts})
+                if required_concepts
+                else sorted({f.concept for f in period_facts})
+            )
+            missing_concepts = (
+                sorted(set(required_concepts) - set(matched_concepts)) if required_concepts else []
+            )
+            coverage[period.isoformat()] = {
+                "has_facts": len(period_facts) > 0,
+                "fact_count": len(period_facts),
+                "concept_count": len(matched_concepts),
+                "matched_concepts": matched_concepts,
+                "missing_concepts": missing_concepts,
+                "has_required_concepts": len(missing_concepts) == 0,
+            }
+        return coverage

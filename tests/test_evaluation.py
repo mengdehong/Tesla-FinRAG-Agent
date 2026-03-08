@@ -30,6 +30,7 @@ from tesla_finrag.evaluation.runner import (
 )
 from tesla_finrag.evaluation.workbench import (
     FilingScope,
+    ProviderMode,
     WorkbenchPipeline,
     _seed_demo_repositories,
 )
@@ -330,8 +331,19 @@ class TestDemoResponseContract:
     """Verify the demo pipeline returns objects matching the UI contract."""
 
     def test_workbench_scope_filters_results(self) -> None:
+        from unittest.mock import MagicMock
+        mock_provider = MagicMock()
+        mock_provider.info.provider_name = "mock"
+        mock_provider.info.as_dict.return_value = {}
+        mock_provider.embed_texts.side_effect = lambda texts: [[0.0]] * len(texts)
+        mock_provider.generate_grounded_answer.return_value = "Mock answer"
+
         corpus_repo, facts_repo = _seed_demo_repositories()
-        pipeline = WorkbenchPipeline(corpus_repo=corpus_repo, facts_repo=facts_repo)
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider=mock_provider,
+        )
         question = "What was Tesla's total revenue in FY2023?"
 
         _, _, answer_2023 = pipeline.run(

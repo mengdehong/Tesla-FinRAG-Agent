@@ -10,6 +10,24 @@ from datetime import date
 
 import pytest
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-integration", action="store_true", default=False, help="run integration tests"
+    )
+    parser.addoption(
+        "--run-slow", action="store_true", default=False, help="run slow tests"
+    )
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    skip_integration = pytest.mark.skip(reason="need --run-integration option to run")
+    skip_slow = pytest.mark.skip(reason="need --run-slow option to run")
+    
+    for item in items:
+        if "integration" in item.keywords and not config.getoption("--run-integration"):
+            item.add_marker(skip_integration)
+        if "slow" in item.keywords and not config.getoption("--run-slow"):
+            item.add_marker(skip_slow)
+
 from tesla_finrag.answer.composer import GroundedAnswerComposer
 from tesla_finrag.calculation.calculator import StructuredCalculator
 from tesla_finrag.evidence.linker import EvidenceLinker

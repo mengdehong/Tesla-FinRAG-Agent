@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from tesla_finrag.answer.composer import GroundedAnswerComposer
 from tesla_finrag.models import AnswerStatus, QueryType
 from tesla_finrag.planning.query_planner import RuleBasedQueryPlanner
@@ -17,6 +19,8 @@ from tesla_finrag.retrieval.hybrid import HybridRetrievalService
 from tesla_finrag.retrieval.in_memory import (
     InMemoryCorpusRepository,
 )
+
+pytestmark = pytest.mark.integration
 
 
 def _run_full_pipeline(

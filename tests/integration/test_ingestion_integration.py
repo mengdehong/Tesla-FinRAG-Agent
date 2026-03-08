@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Guard: skip if data/raw/ doesn't have real filings
 # ═══════════════════════════════════════════════════════════════════════════

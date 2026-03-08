@@ -23,6 +23,7 @@ from tesla_finrag.evaluation.workbench import (
     _seed_demo_repositories,
     get_workbench_pipeline,
 )
+from tesla_finrag.guidance import INGEST_COMMAND
 from tesla_finrag.provider import ProviderError
 
 # ---------------------------------------------------------------------------
@@ -246,7 +247,10 @@ class TestCLISmoke:
             env=env_override,
         )
         assert result.returncode != 0
-        assert "API key" in result.stderr or "Error" in result.stderr
+        if "processed" in result.stderr.lower():
+            assert INGEST_COMMAND in result.stderr
+        else:
+            assert "API key" in result.stderr or "Error" in result.stderr
 
     def test_cli_help_shows_ask(self) -> None:
         result = subprocess.run(
@@ -257,6 +261,7 @@ class TestCLISmoke:
         )
         assert result.returncode == 0
         assert "ask" in result.stdout
+        assert "ingest" in result.stdout
 
 
 # ---------------------------------------------------------------------------

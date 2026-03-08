@@ -1,0 +1,17 @@
+## MODIFIED Requirements
+
+### Requirement: Reproducible workspace bootstrap
+The project SHALL provide a reproducible local workspace bootstrap based on `uv`, with source code under `src/`, tests under `tests/`, and documented commands for dependency installation, processed-corpus generation, runtime launch, linting, and test execution.
+
+#### Scenario: Initialize the workspace
+- **WHEN** a developer starts from a fresh clone of the repository
+- **THEN** the repository provides the files and documented commands needed to install dependencies and create a runnable Python workspace with `uv`
+
+#### Scenario: Run baseline validation
+- **WHEN** a developer runs the documented validation commands
+- **THEN** the project can execute lint and test checks without requiring ad hoc setup steps outside the repository
+
+#### Scenario: Bootstrap the runtime locally
+- **WHEN** a developer follows the documented quick-start workflow to launch the local runtime
+- **THEN** the repository documentation shows how to prepare `data/processed` and which command to run next when processed artifacts are missing
+

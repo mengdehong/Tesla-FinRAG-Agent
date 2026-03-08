@@ -44,8 +44,14 @@ with st.sidebar:
 try:
     pipeline = get_workbench_pipeline(provider_mode=ProviderMode(selected_provider))
 except Exception as exc:  # pragma: no cover - exercised in the UI
+    from tesla_finrag.guidance import format_corpus_guidance
+    from tesla_finrag.runtime import ProcessedCorpusError
+
     st.title("Tesla FinRAG Evaluation Workbench")
-    st.error(f"Unable to initialize the pipeline: {exc}")
+    if isinstance(exc, ProcessedCorpusError):
+        st.error(format_corpus_guidance(exc))
+    else:
+        st.error(f"Unable to initialize the pipeline: {exc}")
     st.stop()
 
 available_years = pipeline.available_years

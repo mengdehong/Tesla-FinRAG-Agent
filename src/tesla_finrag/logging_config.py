@@ -18,8 +18,20 @@ import sys
 
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
+_FONT_BBOX_WARNING = (
+    "Could not get FontBBox from font descriptor because "
+    "None cannot be parsed as 4 floats"
+)
 
 _configured = False
+_pdfminer_filter_installed = False
+
+
+class _PdfMinerNoiseFilter(logging.Filter):
+    """Suppress known non-fatal pdfminer font metadata noise."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return _FONT_BBOX_WARNING not in record.getMessage()
 
 
 def _configure_root(level: str) -> None:
@@ -35,6 +47,16 @@ def _configure_root(level: str) -> None:
         force=False,
     )
     _configured = True
+
+
+def suppress_pdfminer_font_warnings() -> None:
+    """Suppress the known non-fatal FontBBox warning from pdfminer."""
+    global _pdfminer_filter_installed  # noqa: PLW0603
+    if _pdfminer_filter_installed:
+        return
+
+    logging.getLogger("pdfminer.pdffont").addFilter(_PdfMinerNoiseFilter())
+    _pdfminer_filter_installed = True
 
 
 def get_logger(name: str, level: str | None = None) -> logging.Logger:
@@ -56,3 +78,12 @@ def get_logger(name: str, level: str | None = None) -> logging.Logger:
     if level is not None:
         logger.setLevel(level.upper())
     return logger
+
+
+def configure_cli_logging(level: str | None = None) -> None:
+    """Configure CLI logging and suppress known non-fatal parser noise."""
+    # Import here to avoid circular imports at module level.
+    from tesla_finrag.settings import settings  # noqa: PLC0415
+
+    _configure_root(level or settings.log_level)
+    suppress_pdfminer_font_warnings()

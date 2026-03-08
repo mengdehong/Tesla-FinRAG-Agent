@@ -14,11 +14,13 @@ Or programmatically::
 from __future__ import annotations
 
 import json
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
 
 from tesla_finrag.models import AnswerPayload, AnswerStatus
+from tesla_finrag.runtime import ProcessedCorpusError
 
 from .models import (
     BenchmarkQuestion,
@@ -157,6 +159,11 @@ class EvaluationRunner:
                 latency_ms=round(elapsed_ms, 2),
                 passed=passed,
             )
+        except ProcessedCorpusError:
+            # Processed-corpus bootstrap failures are startup problems, not
+            # per-question benchmark outcomes. Let the CLI surface shared
+            # remediation guidance and exit non-zero.
+            raise
         except Exception as exc:
             return QuestionResult(
                 question_id=q.question_id,
@@ -202,10 +209,21 @@ class EvaluationRunner:
 
 def main() -> None:
     """Run the evaluation benchmark and print results."""
-    runner = EvaluationRunner()
+    from tesla_finrag.guidance import format_corpus_guidance
+    from tesla_finrag.runtime import ProcessedCorpusError
+
+    try:
+        runner = EvaluationRunner()
+    except ProcessedCorpusError as exc:
+        print(format_corpus_guidance(exc), file=sys.stderr)
+        raise SystemExit(1) from None
 
     print("Loading benchmark questions...")
-    run = runner.run_all()
+    try:
+        run = runner.run_all()
+    except ProcessedCorpusError as exc:
+        print(format_corpus_guidance(exc), file=sys.stderr)
+        raise SystemExit(1) from None
 
     print(f"\nEvaluation Run: {run.run_id}")
     print(f"Timestamp: {run.timestamp.isoformat()}")

@@ -684,3 +684,33 @@ class TestPipeline:
 
         assert summary["filings"] == 3
         assert summary["section_chunks"] == 0
+        assert summary["failed_filings"] == 3
+        assert len(summary["failed_details"]) == 3
+
+    def test_run_pipeline_falls_back_to_sequential_when_parallel_unavailable(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        calls: list[int] = []
+
+        def fake_run_jobs(
+            filings: list[object],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict]]:
+            calls.append(workers)
+            if workers > 1:
+                raise PermissionError("sandbox blocked multiprocessing")
+            return {}, {}, []
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed", workers=4)
+
+        assert calls == [4, 1]
+        assert summary["workers"] == 1

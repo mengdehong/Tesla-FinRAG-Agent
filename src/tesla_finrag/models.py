@@ -41,6 +41,15 @@ class ChunkKind(StrEnum):
     TABLE = "table"
 
 
+class ValidationStatus(StrEnum):
+    """Outcome of numeric / structural validation on an extracted artifact."""
+
+    VALID = "valid"
+    SUSPECT = "suspect"
+    FAILED = "failed"
+    NOT_CHECKED = "not_checked"
+
+
 class AnswerStatus(StrEnum):
     """High-level outcome of an answer generation attempt."""
 
@@ -162,6 +171,76 @@ class FilingManifest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Parser provenance & validation
+# ---------------------------------------------------------------------------
+
+
+class ParserProvenance(BaseModel):
+    """Records which parser path produced an extracted artifact.
+
+    Attached to every chunk so downstream consumers and operators can trace
+    how a narrative or table artifact was produced, including any fallback.
+    """
+
+    parser_name: str = Field(
+        "pdfplumber",
+        description="Primary parser that produced the artifact (e.g. 'pdfplumber', 'pymupdf').",
+    )
+    used_fallback: bool = Field(
+        False,
+        description="Whether a fallback parser was used instead of the primary.",
+    )
+    fallback_reason: str | None = Field(
+        None,
+        description="Why the fallback was triggered (e.g. 'empty_text', 'no_tables').",
+    )
+
+    model_config = {"frozen": True}
+
+
+class CellValidationResult(BaseModel):
+    """Per-cell validation outcome for a financial table row.
+
+    Stored alongside table chunks so downstream consumers can distinguish
+    trusted numeric evidence from suspect or failed extractions.
+    """
+
+    row_index: int = Field(ge=0)
+    col_index: int = Field(ge=0)
+    raw_value: str = Field(description="Original cell text before normalization.")
+    normalized_value: float | None = Field(
+        None,
+        description="Parsed numeric value after normalization, if successful.",
+    )
+    status: ValidationStatus = ValidationStatus.NOT_CHECKED
+    detail: str = Field(
+        "",
+        description="Human-readable explanation (e.g. 'OCR substitution detected').",
+    )
+
+    model_config = {"frozen": True}
+
+
+class FactReconciliationResult(BaseModel):
+    """Outcome of reconciling a table-derived value against an authoritative XBRL fact."""
+
+    concept: str = Field(description="XBRL concept matched (e.g. 'us-gaap:Revenues').")
+    period_end: date
+    table_value: float
+    fact_value: float
+    tolerance: float = Field(
+        0.01,
+        description="Relative tolerance used for the comparison.",
+    )
+    matched: bool = Field(
+        description="True when table and fact values agree within tolerance.",
+    )
+    detail: str = ""
+
+    model_config = {"frozen": True}
+
+
+# ---------------------------------------------------------------------------
 # Corpus chunks
 # ---------------------------------------------------------------------------
 
@@ -185,6 +264,10 @@ class SectionChunk(ChunkBase):
     section_title: str
     text: str
     token_count: int = Field(ge=0)
+    parser_provenance: ParserProvenance | None = Field(
+        None,
+        description="Parser path and fallback info that produced this chunk.",
+    )
 
 
 class TableChunk(ChunkBase):
@@ -196,6 +279,22 @@ class TableChunk(ChunkBase):
     headers: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
     raw_text: str = Field(description="Serialised fallback text for embedding.")
+    parser_provenance: ParserProvenance | None = Field(
+        None,
+        description="Parser path and fallback info that produced this chunk.",
+    )
+    validation_status: ValidationStatus = Field(
+        ValidationStatus.NOT_CHECKED,
+        description="Overall validation outcome for this table.",
+    )
+    cell_validations: list[CellValidationResult] = Field(
+        default_factory=list,
+        description="Per-cell validation results for numeric cells.",
+    )
+    fact_reconciliations: list[FactReconciliationResult] = Field(
+        default_factory=list,
+        description="Results of reconciling table values against authoritative XBRL facts.",
+    )
 
 
 # ---------------------------------------------------------------------------

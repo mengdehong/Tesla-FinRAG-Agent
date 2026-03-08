@@ -53,6 +53,7 @@ def _table_signature(chunk: TableChunk) -> tuple[object, ...]:
         chunk.raw_text,
     )
 
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
 # ═══════════════════════════════════════════════════════════════════════════
@@ -878,16 +879,23 @@ class TestPipeline:
 
         calls: list[int] = []
 
+        _empty_diag = {
+            "fallback_pages": 0,
+            "failed_pages": 0,
+            "validation_failed_tables": 0,
+            "validation_suspect_tables": 0,
+        }
+
         def fake_run_jobs(
             filings: list[object],
             raw_dir_value: Path,
             *,
             workers: int,
-        ) -> tuple[dict, dict, list[dict]]:
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
             calls.append(workers)
             if workers > 1:
                 raise PermissionError("sandbox blocked multiprocessing")
-            return {}, {}, []
+            return {}, {}, [], _empty_diag.copy()
 
         monkeypatch.setattr(
             "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
@@ -915,7 +923,7 @@ class TestPipeline:
             raw_dir_value: Path,
             *,
             workers: int,
-        ) -> tuple[dict, dict, list[dict]]:
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
             calls.append([filing.source_path for filing in filings])
             section_map: dict = {}
             table_map: dict = {}
@@ -923,7 +931,17 @@ class TestPipeline:
                 sections, tables = self._fake_chunks(filing)
                 section_map[filing.doc_id] = sections
                 table_map[filing.doc_id] = tables
-            return section_map, table_map, []
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
 
         monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
         monkeypatch.setattr(
@@ -966,7 +984,7 @@ class TestPipeline:
             raw_dir_value: Path,
             *,
             workers: int,
-        ) -> tuple[dict, dict, list[dict]]:
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
             calls.append([Path(filing.source_path).name for filing in filings])
             section_map: dict = {}
             table_map: dict = {}
@@ -974,7 +992,17 @@ class TestPipeline:
                 sections, tables = self._fake_chunks(filing)
                 section_map[filing.doc_id] = sections
                 table_map[filing.doc_id] = tables
-            return section_map, table_map, []
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
 
         monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
         monkeypatch.setattr(
@@ -1011,14 +1039,24 @@ class TestPipeline:
             raw_dir_value: Path,
             *,
             workers: int,
-        ) -> tuple[dict, dict, list[dict]]:
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
             section_map: dict = {}
             table_map: dict = {}
             for filing in filings:
                 sections, tables = self._fake_chunks(filing)
                 section_map[filing.doc_id] = sections
                 table_map[filing.doc_id] = tables
-            return section_map, table_map, []
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
 
         def fake_normalize(path: Path) -> list[FactRecord]:
             normalize_calls.append(path.read_text(encoding="utf-8"))
@@ -1075,7 +1113,7 @@ class TestPipeline:
             raw_dir_value: Path,
             *,
             workers: int,
-        ) -> tuple[dict, dict, list[dict]]:
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
             calls.append(len(filings))
             section_map: dict = {}
             table_map: dict = {}
@@ -1083,7 +1121,17 @@ class TestPipeline:
                 sections, tables = self._fake_chunks(filing)
                 section_map[filing.doc_id] = sections
                 table_map[filing.doc_id] = tables
-            return section_map, table_map, []
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
 
         monkeypatch.setattr("tesla_finrag.ingestion.pipeline.os.cpu_count", lambda: 8)
         monkeypatch.setattr(
@@ -1115,14 +1163,24 @@ class TestPipeline:
             raw_dir_value: Path,
             *,
             workers: int,
-        ) -> tuple[dict, dict, list[dict]]:
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
             section_map: dict = {}
             table_map: dict = {}
             for filing in filings:
                 sections, tables = self._fake_chunks(filing)
                 section_map[filing.doc_id] = sections
                 table_map[filing.doc_id] = tables
-            return section_map, table_map, []
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
 
         monkeypatch.setattr(
             "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
@@ -1176,9 +1234,14 @@ class TestPipeline:
                 store.index_table_chunk(chunk, [0.1, 0.2, 0.3])
         store.save_metadata(
             {
+                "index_schema_version": 2,
                 "embedding_model": "nomic-embed-text",
                 "embedding_base_url": "http://localhost:11434/v1",
                 "embedding_dimensions": 3,
+                "source_chunk_count": (
+                    len(sections_a) + len(tables_a) + len(sections_b) + len(tables_b)
+                ),
+                "vector_row_count": store.chunk_count,
                 "chunk_count": store.chunk_count,
             }
         )
@@ -1224,3 +1287,1585 @@ class TestPipeline:
         reloaded_store = LanceDBRetrievalStore(output_dir / "lancedb")
         assert indexed_count == len(sections_a) + len(tables_a)
         assert reloaded_store.chunk_count == indexed_count
+        metadata = reloaded_store.load_metadata()
+        assert metadata is not None
+        assert metadata["index_schema_version"] == 2
+        assert metadata["source_chunk_count"] == len(sections_a) + len(tables_a)
+        assert metadata["vector_row_count"] == indexed_count
+
+    def test_segment_chunk_for_indexing_splits_oversized_narrative(self) -> None:
+        from tesla_finrag.ingestion.index_segmentation import segment_chunk_for_indexing
+
+        doc_id = uuid4()
+        long_text = ("\n\n".join([("Sentence. " * 120) for _ in range(4)])).strip()
+        chunk = SectionChunk(
+            doc_id=doc_id,
+            section_title="MD&A",
+            text=long_text,
+            token_count=1200,
+        )
+
+        segments = segment_chunk_for_indexing(chunk, max_chars=500, overlap_chars=50)
+        assert len(segments) > 1
+        assert [segment.segment_index for segment in segments] == list(range(len(segments)))
+        assert all(segment.segment_count == len(segments) for segment in segments)
+        assert all(len(segment.text) <= 500 for segment in segments)
+
+    def test_segment_chunk_for_indexing_splits_oversized_table_with_header_context(self) -> None:
+        from tesla_finrag.ingestion.index_segmentation import segment_chunk_for_indexing
+
+        doc_id = uuid4()
+        table_lines = ["Header A | Header B"] + [f"row-{i} | value-{i}" for i in range(120)]
+        raw_text = "\n".join(table_lines)
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Financial Statements",
+            headers=["Header A", "Header B"],
+            rows=[[f"row-{i}", f"value-{i}"] for i in range(120)],
+            raw_text=raw_text,
+        )
+
+        segments = segment_chunk_for_indexing(chunk, max_chars=280, overlap_chars=40)
+        assert len(segments) > 1
+        assert all(len(segment.text) <= 280 for segment in segments)
+        assert all(segment.text.startswith("Header A | Header B") for segment in segments[1:])
+
+    def test_segment_chunk_for_indexing_preserves_single_line_table_content(self) -> None:
+        from tesla_finrag.ingestion.index_segmentation import segment_chunk_for_indexing
+
+        doc_id = uuid4()
+        tail = "".join(f"{i:04d}" for i in range(400))
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Financial Statements",
+            headers=["H1"],
+            rows=[["row"]],
+            raw_text=f"Header\nrow | {tail}",
+        )
+
+        segments = segment_chunk_for_indexing(chunk, max_chars=280, overlap_chars=40)
+        combined = "\n".join(segment.text for segment in segments)
+
+        assert len(segments) > 1
+        assert all(len(segment.text) <= 280 for segment in segments)
+        assert tail[:80] in combined
+        assert tail[600:680] in combined
+        assert tail[-80:] in combined
+
+    def test_build_lancedb_index_segments_oversized_chunk_for_local_limits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import _build_lancedb_index
+        from tesla_finrag.ingestion.state import FilingStateEntry, IngestionState
+        from tesla_finrag.ingestion.writers import write_filing_bundle
+        from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
+
+        filing = FilingDocument(
+            filing_type=FilingType.QUARTERLY,
+            period_end=date(2024, 3, 31),
+            fiscal_year=2024,
+            fiscal_quarter=1,
+            accession_number="0000950170-2024-03",
+            filed_at=date(2024, 4, 15),
+            source_path="data/raw/Tesla_2024_Q1_10-Q.pdf",
+        )
+        oversized_table = TableChunk(
+            doc_id=filing.doc_id,
+            section_title="Financial Statements",
+            caption="Oversized table",
+            headers=["Metric", "Value"],
+            rows=[[f"Metric {i}", f"{i}"] for i in range(300)],
+            raw_text="\n".join(["Metric | Value"] + [f"Metric {i} | {i}" for i in range(300)]),
+        )
+        output_dir = tmp_path / "processed"
+        write_filing_bundle(filing, [], [oversized_table], output_dir)
+
+        class FakeOllamaProvider:
+            embedding_model = "nomic-embed-text"
+            base_url = "http://localhost:11434/v1"
+            info = SimpleNamespace(
+                provider_name="shared-indexing-backend",
+                embedding_model="nomic-embed-text",
+                base_url="http://localhost:11434/v1",
+            )
+
+            def embed_texts(self, texts: list[str]) -> list[list[float]]:
+                for text in texts:
+                    if len(text) > 2400:
+                        raise RuntimeError("400 input length exceeds the context length")
+                return [[0.1, 0.2, 0.3] for _ in texts]
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.IndexingEmbeddingProvider.from_settings",
+            lambda: FakeOllamaProvider(),
+        )
+
+        state = IngestionState(
+            filings={
+                str(filing.doc_id): FilingStateEntry(
+                    doc_id=filing.doc_id,
+                    source_path=filing.source_path,
+                    source_fingerprint="fingerprint",
+                    parser_fingerprint="parser",
+                    section_chunk_count=0,
+                    table_chunk_count=1,
+                )
+            }
+        )
+
+        row_count = _build_lancedb_index(
+            output_dir,
+            state,
+            refreshed_doc_ids={filing.doc_id},
+            removed_doc_ids=set(),
+        )
+
+        store = LanceDBRetrievalStore(output_dir / "lancedb")
+        metadata = store.load_metadata()
+        assert row_count > 1
+        assert metadata is not None
+        assert metadata["source_chunk_count"] == 1
+        assert metadata["vector_row_count"] == row_count
+
+    def test_build_lancedb_index_batches_segments_globally(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import _build_lancedb_index
+        from tesla_finrag.ingestion.state import FilingStateEntry, IngestionState
+        from tesla_finrag.ingestion.writers import write_filing_bundle
+
+        filing = FilingDocument(
+            filing_type=FilingType.QUARTERLY,
+            period_end=date(2024, 9, 30),
+            fiscal_year=2024,
+            fiscal_quarter=3,
+            accession_number="0000950170-2024-09",
+            filed_at=date(2024, 10, 15),
+            source_path="data/raw/Tesla_2024_Q3_10-Q.pdf",
+        )
+        sections = [
+            SectionChunk(
+                doc_id=filing.doc_id,
+                section_title=f"Section {index}",
+                text=f"short text {index}",
+                token_count=3,
+            )
+            for index in range(70)
+        ]
+        output_dir = tmp_path / "processed"
+        write_filing_bundle(filing, sections, [], output_dir)
+
+        class BatchTrackingProvider:
+            embedding_model = "nomic-embed-text"
+            base_url = "http://localhost:11434/v1"
+            batch_sizes: list[int] = []
+            info = SimpleNamespace(
+                provider_name="shared-indexing-backend",
+                embedding_model="nomic-embed-text",
+                base_url="http://localhost:11434/v1",
+            )
+
+            def embed_texts(self, texts: list[str]) -> list[list[float]]:
+                self.batch_sizes.append(len(texts))
+                return [[0.1, 0.2, 0.3] for _ in texts]
+
+        provider = BatchTrackingProvider()
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.IndexingEmbeddingProvider.from_settings",
+            lambda: provider,
+        )
+
+        state = IngestionState(
+            filings={
+                str(filing.doc_id): FilingStateEntry(
+                    doc_id=filing.doc_id,
+                    source_path=filing.source_path,
+                    source_fingerprint="fingerprint",
+                    parser_fingerprint="parser",
+                    section_chunk_count=len(sections),
+                    table_chunk_count=0,
+                )
+            }
+        )
+
+        row_count = _build_lancedb_index(
+            output_dir,
+            state,
+            refreshed_doc_ids={filing.doc_id},
+            removed_doc_ids=set(),
+        )
+
+        assert row_count == len(sections)
+        assert provider.batch_sizes == [64, 6]
+
+    def test_build_lancedb_index_reports_unindexable_chunk_diagnostics(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import _build_lancedb_index
+        from tesla_finrag.ingestion.state import FilingStateEntry, IngestionState
+        from tesla_finrag.ingestion.writers import write_filing_bundle
+
+        filing = FilingDocument(
+            filing_type=FilingType.QUARTERLY,
+            period_end=date(2024, 6, 30),
+            fiscal_year=2024,
+            fiscal_quarter=2,
+            accession_number="0000950170-2024-06",
+            filed_at=date(2024, 7, 15),
+            source_path="data/raw/Tesla_2024_Q2_10-Q.pdf",
+        )
+        bad_chunk = SectionChunk(
+            doc_id=filing.doc_id,
+            section_title="MD&A",
+            text=("UNINDEXABLE " * 900).strip(),
+            token_count=900,
+        )
+        output_dir = tmp_path / "processed"
+        write_filing_bundle(filing, [bad_chunk], [], output_dir)
+
+        class AlwaysFailProvider:
+            embedding_model = "nomic-embed-text"
+            base_url = "http://localhost:11434/v1"
+            info = SimpleNamespace(
+                provider_name="shared-indexing-backend",
+                embedding_model="nomic-embed-text",
+                base_url="http://localhost:11434/v1",
+            )
+
+            def embed_texts(self, texts: list[str]) -> list[list[float]]:
+                raise RuntimeError("400 input length exceeds the context length")
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline.IndexingEmbeddingProvider.from_settings",
+            lambda: AlwaysFailProvider(),
+        )
+
+        state = IngestionState(
+            filings={
+                str(filing.doc_id): FilingStateEntry(
+                    doc_id=filing.doc_id,
+                    source_path=filing.source_path,
+                    source_fingerprint="fingerprint",
+                    parser_fingerprint="parser",
+                    section_chunk_count=1,
+                    table_chunk_count=0,
+                )
+            }
+        )
+
+        with pytest.raises(RuntimeError, match="Failed to index chunk after segmentation"):
+            _build_lancedb_index(
+                output_dir,
+                state,
+                refreshed_doc_ids={filing.doc_id},
+                removed_doc_ids=set(),
+            )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Numeric validation regression tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestNumericValidation:
+    """Regression tests for malformed, edge-case, and normal numeric cells."""
+
+    def test_normalize_plain_integer(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, detail = normalize_numeric_cell("1234")
+        assert value == 1234.0
+        assert detail == "ok"
+
+    def test_normalize_comma_separated(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, _ = normalize_numeric_cell("1,234,567")
+        assert value == 1_234_567.0
+
+    def test_normalize_parenthesized_negative(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, _ = normalize_numeric_cell("(1,234)")
+        assert value == -1234.0
+
+    def test_normalize_currency_prefix(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, _ = normalize_numeric_cell("$96,773")
+        assert value == 96_773.0
+
+    def test_normalize_percentage(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, detail = normalize_numeric_cell("12.5%")
+        assert value == pytest.approx(0.125)
+        assert detail == "percent"
+
+    def test_normalize_scale_suffix_millions(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, detail = normalize_numeric_cell("96.8M")
+        assert value == pytest.approx(96_800_000.0)
+        assert "scaled" in detail
+
+    def test_normalize_scale_suffix_billions(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, _ = normalize_numeric_cell("1.5B")
+        assert value == pytest.approx(1_500_000_000.0)
+
+    def test_normalize_dash_as_zero(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        for dash in ("—", "–", "-", "−"):
+            value, detail = normalize_numeric_cell(dash)
+            assert value == 0.0, f"Expected 0.0 for dash {dash!r}"
+            assert detail == "dash_zero"
+
+    def test_normalize_empty_string(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, detail = normalize_numeric_cell("")
+        assert value is None
+        assert detail == "empty"
+
+    def test_normalize_non_numeric_text(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, detail = normalize_numeric_cell("Total Revenue")
+        assert value is None
+        assert detail == "non_numeric"
+
+    def test_normalize_en_dash_negative(self) -> None:
+        from tesla_finrag.ingestion.validation import normalize_numeric_cell
+
+        value, _ = normalize_numeric_cell("–42")
+        assert value == -42.0
+
+    def test_is_numeric_candidate_positive(self) -> None:
+        from tesla_finrag.ingestion.validation import is_numeric_candidate
+
+        assert is_numeric_candidate("$1,234") is True
+        assert is_numeric_candidate("(500)") is True
+        assert is_numeric_candidate("12.5%") is True
+        assert is_numeric_candidate("—") is True
+
+    def test_is_numeric_candidate_negative(self) -> None:
+        from tesla_finrag.ingestion.validation import is_numeric_candidate
+
+        assert is_numeric_candidate("Revenue") is False
+        assert is_numeric_candidate("") is False
+        assert is_numeric_candidate("Item 1. Financial Statements") is False
+
+
+class TestSuspiciousCellDetection:
+    """Regression tests for OCR corruption detection."""
+
+    def test_detect_ocr_I_digit_mix(self) -> None:
+        from tesla_finrag.ingestion.validation import detect_suspicious_cell
+
+        result = detect_suspicious_cell("I23456")
+        assert result is not None
+        assert "OCR" in result
+
+    def test_detect_ocr_O_digit_mix(self) -> None:
+        from tesla_finrag.ingestion.validation import detect_suspicious_cell
+
+        result = detect_suspicious_cell("1O234")
+        assert result is not None
+
+    def test_clean_numeric_not_suspicious(self) -> None:
+        from tesla_finrag.ingestion.validation import detect_suspicious_cell
+
+        assert detect_suspicious_cell("1,234,567") is None
+        assert detect_suspicious_cell("$96,773") is None
+        assert detect_suspicious_cell("(500)") is None
+
+
+class TestTableCellValidation:
+    """Tests for validate_table_cells on TableChunk objects."""
+
+    def test_validate_all_valid_cells(self) -> None:
+        from tesla_finrag.ingestion.validation import (
+            overall_validation_status,
+            validate_table_cells,
+        )
+        from tesla_finrag.models import ValidationStatus
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Value"],
+            rows=[["Revenue", "$96,773"], ["Net Income", "$7,928"]],
+            raw_text="Metric | Value\nRevenue | $96,773\nNet Income | $7,928",
+        )
+        results = validate_table_cells(chunk)
+        assert len(results) == 2
+        assert all(r.status == ValidationStatus.VALID for r in results)
+        assert overall_validation_status(results) == ValidationStatus.VALID
+
+    def test_validate_with_failed_cell(self) -> None:
+        """A cell that looks numeric but can't be parsed results in FAILED status."""
+        from tesla_finrag.ingestion.validation import (
+            overall_validation_status,
+            validate_table_cells,
+        )
+        from tesla_finrag.models import ValidationStatus
+
+        # A cell with only a dollar sign and comma — passes the numeric candidate
+        # check but normalization will fail after stripping to empty.
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Value"],
+            rows=[["Revenue", "$,,,"]],
+            raw_text="Metric | Value\nRevenue | $,,,",
+        )
+        results = validate_table_cells(chunk)
+        assert len(results) >= 1
+        failed = [r for r in results if r.status == ValidationStatus.FAILED]
+        assert len(failed) >= 1
+        assert overall_validation_status(results) == ValidationStatus.FAILED
+
+    def test_validate_non_numeric_cells_skipped(self) -> None:
+        from tesla_finrag.ingestion.validation import validate_table_cells
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Section", "Description"],
+            rows=[["MD&A", "Discussion of results"]],
+            raw_text="Section | Description\nMD&A | Discussion of results",
+        )
+        results = validate_table_cells(chunk)
+        assert len(results) == 0
+
+    def test_validate_empty_table(self) -> None:
+        from tesla_finrag.ingestion.validation import (
+            overall_validation_status,
+            validate_table_cells,
+        )
+        from tesla_finrag.models import ValidationStatus
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric"],
+            rows=[],
+            raw_text="Metric",
+        )
+        results = validate_table_cells(chunk)
+        assert len(results) == 0
+        assert overall_validation_status(results) == ValidationStatus.NOT_CHECKED
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Fact reconciliation regression tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestFactReconciliation:
+    """Tests for reconciling table values against XBRL facts."""
+
+    def test_reconcile_matching_value(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        doc_id = uuid4()
+        fact = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            period_end=date(2023, 12, 31),
+        )
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "96,773"]],
+            raw_text="Metric | Revenues\nFY2023 | 96,773",
+        )
+        results = reconcile_table_with_facts(chunk, [fact])
+        assert len(results) >= 1
+        assert any(r.matched for r in results)
+
+    def test_reconcile_mismatching_value(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        doc_id = uuid4()
+        fact = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            period_end=date(2023, 12, 31),
+        )
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "50,000"]],  # Wrong value
+            raw_text="Metric | Revenues\nFY2023 | 50,000",
+        )
+        results = reconcile_table_with_facts(chunk, [fact])
+        assert len(results) >= 1
+        assert any(not r.matched for r in results)
+        mismatch = next(r for r in results if not r.matched)
+        assert "mismatch" in mismatch.detail
+
+    def test_reconcile_with_period_filter(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        doc_id = uuid4()
+        fact_q1 = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=23329.0,
+            unit="USD",
+            period_end=date(2023, 3, 31),
+        )
+        fact_fy = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            period_end=date(2023, 12, 31),
+        )
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "96,773"]],
+            raw_text="Metric | Revenues\nFY2023 | 96,773",
+        )
+        # When filtering to Q1, the FY value should not match.
+        results = reconcile_table_with_facts(
+            chunk, [fact_q1, fact_fy], period_end=date(2023, 3, 31)
+        )
+        # Only Q1 fact considered, so all comparisons will be against 23329.
+        assert all(r.period_end == date(2023, 3, 31) for r in results)
+
+    def test_reconcile_no_matching_headers(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        doc_id = uuid4()
+        fact = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            period_end=date(2023, 12, 31),
+        )
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Amount"],  # No "Revenues" header
+            rows=[["FY2023", "96,773"]],
+            raw_text="Metric | Amount\nFY2023 | 96,773",
+        )
+        results = reconcile_table_with_facts(chunk, [fact])
+        assert len(results) == 0
+
+    def test_reconcile_empty_facts(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "96,773"]],
+            raw_text="Metric | Revenues\nFY2023 | 96,773",
+        )
+        results = reconcile_table_with_facts(chunk, [])
+        assert len(results) == 0
+
+    def test_reconcile_ignores_facts_from_other_filings(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        chunk_doc_id = uuid4()
+        fact = FactRecord(
+            doc_id=uuid4(),
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            period_end=date(2023, 12, 31),
+        )
+        chunk = TableChunk(
+            doc_id=chunk_doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "96,773"]],
+            raw_text="Metric | Revenues\nFY2023 | 96,773",
+        )
+        results = reconcile_table_with_facts(chunk, [fact], period_end=date(2023, 12, 31))
+        assert results == []
+
+    def test_reconcile_skips_empty_headers(self) -> None:
+        from tesla_finrag.ingestion.validation import reconcile_table_with_facts
+
+        doc_id = uuid4()
+        facts = [
+            FactRecord(
+                doc_id=doc_id,
+                concept="us-gaap:Revenues",
+                label="Revenues",
+                value=100.0,
+                unit="USD",
+                period_end=date(2023, 12, 31),
+            ),
+            FactRecord(
+                doc_id=doc_id,
+                concept="us-gaap:GrossProfit",
+                label="Gross Profit",
+                value=100.0,
+                unit="USD",
+                period_end=date(2023, 12, 31),
+            ),
+        ]
+        chunk = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", ""],
+            rows=[["FY2023", "100"]],
+            raw_text="Metric |\nFY2023 | 100",
+        )
+        results = reconcile_table_with_facts(chunk, facts, period_end=date(2023, 12, 31))
+        assert results == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 8. Parser provenance and fallback tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestParserProvenance:
+    """Tests for parser provenance tracking in chunks."""
+
+    def test_section_chunk_default_provenance_is_none(self) -> None:
+        chunk = SectionChunk(
+            doc_id=uuid4(),
+            section_title="Item 7. MD&A",
+            text="Test content",
+            token_count=2,
+        )
+        assert chunk.parser_provenance is None
+
+    def test_section_chunk_with_explicit_provenance(self) -> None:
+        from tesla_finrag.models import ParserProvenance
+
+        prov = ParserProvenance(
+            parser_name="pdfplumber",
+            used_fallback=False,
+        )
+        chunk = SectionChunk(
+            doc_id=uuid4(),
+            section_title="Item 7. MD&A",
+            text="Test content",
+            token_count=2,
+            parser_provenance=prov,
+        )
+        assert chunk.parser_provenance is not None
+        assert chunk.parser_provenance.parser_name == "pdfplumber"
+        assert chunk.parser_provenance.used_fallback is False
+
+    def test_table_chunk_default_validation_status(self) -> None:
+        from tesla_finrag.models import ValidationStatus
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["A"],
+            rows=[["1"]],
+            raw_text="A\n1",
+        )
+        assert chunk.validation_status == ValidationStatus.NOT_CHECKED
+        assert chunk.cell_validations == []
+        assert chunk.fact_reconciliations == []
+        assert chunk.parser_provenance is None
+
+    def test_table_chunk_with_fallback_provenance(self) -> None:
+        from tesla_finrag.models import ParserProvenance
+
+        prov = ParserProvenance(
+            parser_name="pymupdf",
+            used_fallback=True,
+            fallback_reason="empty_text",
+        )
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["A"],
+            rows=[["1"]],
+            raw_text="A\n1",
+            parser_provenance=prov,
+        )
+        assert chunk.parser_provenance is not None
+        assert chunk.parser_provenance.used_fallback is True
+        assert chunk.parser_provenance.fallback_reason == "empty_text"
+
+
+class TestParserFallbackAnalysis:
+    """Tests for the fallback logic in analysis.py."""
+
+    def test_page_needs_fallback_empty_text(self) -> None:
+        from tesla_finrag.ingestion.analysis import _page_needs_fallback
+
+        assert _page_needs_fallback("", []) == "empty_text"
+
+    def test_page_needs_fallback_insufficient_text(self) -> None:
+        from tesla_finrag.ingestion.analysis import _page_needs_fallback
+
+        assert _page_needs_fallback("Short", []) == "insufficient_text"
+
+    def test_page_needs_fallback_normal_text(self) -> None:
+        from tesla_finrag.ingestion.analysis import _page_needs_fallback
+
+        normal_text = "This is a full paragraph of text from a financial filing."
+        assert _page_needs_fallback(normal_text, []) is None
+
+    def test_page_needs_fallback_short_text_with_tables(self) -> None:
+        from tesla_finrag.ingestion.analysis import _page_needs_fallback
+
+        # Short text but tables present → not a fallback candidate.
+        assert _page_needs_fallback("Short", [[["a", "b"]]]) is None
+
+    def test_filing_pdf_analysis_diagnostics_properties(self) -> None:
+        from tesla_finrag.ingestion.analysis import (
+            FilingPdfAnalysis,
+            PageParserDiagnostic,
+        )
+
+        diag_ok = PageParserDiagnostic(
+            page_number=1,
+            parser_used="pdfplumber",
+            used_fallback=False,
+            text_chars=500,
+        )
+        diag_fallback = PageParserDiagnostic(
+            page_number=2,
+            parser_used="pymupdf",
+            used_fallback=True,
+            fallback_reason="empty_text",
+            text_chars=200,
+        )
+        diag_error = PageParserDiagnostic(
+            page_number=3,
+            parser_used="pdfplumber",
+            used_fallback=False,
+            error="no_fallback_available: empty_text",
+            text_chars=0,
+        )
+
+        analysis = FilingPdfAnalysis(
+            pdf_path=Path("/tmp/test.pdf"),
+            pages=(),
+            diagnostics=(diag_ok, diag_fallback, diag_error),
+        )
+        assert analysis.fallback_count == 1
+        assert len(analysis.failed_pages) == 1
+        assert analysis.failed_pages[0].page_number == 3
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 9. Pipeline diagnostics summary tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestPipelineDiagnostics:
+    """Tests for ingestion_diagnostics in pipeline summary output."""
+
+    def test_pipeline_summary_includes_ingestion_diagnostics(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
+            return (
+                {},
+                {},
+                [],
+                {
+                    "fallback_pages": 2,
+                    "failed_pages": 1,
+                    "validation_failed_tables": 3,
+                    "validation_suspect_tables": 4,
+                },
+            )
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed")
+
+        assert "ingestion_diagnostics" in summary
+        diag = summary["ingestion_diagnostics"]
+        assert diag["fallback_pages"] == 2
+        assert diag["failed_pages"] == 1
+        assert diag["validation_failed_tables"] == 3
+        assert diag["validation_suspect_tables"] == 4
+
+    def test_pipeline_summary_empty_diagnostics_when_no_issues(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
+            return (
+                {},
+                {},
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed")
+
+        diag = summary["ingestion_diagnostics"]
+        assert all(v == 0 for v in diag.values())
+
+    def test_pipeline_summary_includes_parser_diagnostic_details(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict], dict[str, object]]:
+            return (
+                {},
+                {},
+                [],
+                {
+                    "fallback_pages": 1,
+                    "failed_pages": 1,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                    "parser_diagnostic_details": [
+                        {
+                            "period_key": "FY2023",
+                            "source_path": "data/raw/Tesla_2023_全年_10-K.pdf",
+                            "artifact_type": "page",
+                            "page_number": 7,
+                            "parser_used": "pdfplumber",
+                            "parser_attempts": ["pdfplumber", "pymupdf(unavailable)"],
+                            "used_fallback": False,
+                            "fallback_reason": "empty_text",
+                            "error": "no_fallback_available: empty_text",
+                            "remediation": (
+                                "Install the optional fallback parser "
+                                "(`uv sync --extra fallback`) or review the source PDF manually."
+                            ),
+                        }
+                    ],
+                },
+            )
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=raw_dir.parent / "processed")
+
+        assert "parser_diagnostic_details" in summary
+        details = summary["parser_diagnostic_details"]
+        assert len(details) == 1
+        assert details[0]["page_number"] == 7
+        assert "remediation" in details[0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. Citation-ready table metadata tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCitationReadyTableMetadata:
+    """Verify table chunks carry all metadata needed for citation review."""
+
+    def test_table_chunk_serializes_provenance_and_validation(self) -> None:
+        from tesla_finrag.models import (
+            CellValidationResult,
+            FactReconciliationResult,
+            ParserProvenance,
+            ValidationStatus,
+        )
+
+        prov = ParserProvenance(parser_name="pdfplumber", used_fallback=False)
+        cell_val = CellValidationResult(
+            row_index=0,
+            col_index=1,
+            raw_value="$96,773",
+            normalized_value=96773.0,
+            status=ValidationStatus.VALID,
+            detail="ok",
+        )
+        fact_rec = FactReconciliationResult(
+            concept="us-gaap:Revenues",
+            period_end=date(2023, 12, 31),
+            table_value=96773.0,
+            fact_value=96773.0,
+            matched=True,
+            detail="match",
+        )
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Revenue"],
+            rows=[["FY2023", "$96,773"]],
+            raw_text="Metric | Revenue\nFY2023 | $96,773",
+            parser_provenance=prov,
+            validation_status=ValidationStatus.VALID,
+            cell_validations=[cell_val],
+            fact_reconciliations=[fact_rec],
+        )
+
+        data = chunk.model_dump(mode="json")
+
+        # Provenance serialized.
+        assert data["parser_provenance"]["parser_name"] == "pdfplumber"
+        assert data["parser_provenance"]["used_fallback"] is False
+
+        # Validation status serialized.
+        assert data["validation_status"] == "valid"
+
+        # Cell validations serialized.
+        assert len(data["cell_validations"]) == 1
+        assert data["cell_validations"][0]["normalized_value"] == 96773.0
+
+        # Fact reconciliations serialized.
+        assert len(data["fact_reconciliations"]) == 1
+        assert data["fact_reconciliations"][0]["matched"] is True
+
+    def test_table_chunk_roundtrips_through_json(self) -> None:
+        from tesla_finrag.models import (
+            CellValidationResult,
+            ParserProvenance,
+            ValidationStatus,
+        )
+
+        prov = ParserProvenance(
+            parser_name="pymupdf",
+            used_fallback=True,
+            fallback_reason="empty_text",
+        )
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["A", "B"],
+            rows=[["x", "100"]],
+            raw_text="A | B\nx | 100",
+            parser_provenance=prov,
+            validation_status=ValidationStatus.SUSPECT,
+            cell_validations=[
+                CellValidationResult(
+                    row_index=0,
+                    col_index=1,
+                    raw_value="100",
+                    normalized_value=100.0,
+                    status=ValidationStatus.VALID,
+                    detail="ok",
+                ),
+            ],
+        )
+
+        data = chunk.model_dump(mode="json")
+        restored = TableChunk.model_validate(data)
+
+        assert restored.parser_provenance is not None
+        assert restored.parser_provenance.used_fallback is True
+        assert restored.parser_provenance.fallback_reason == "empty_text"
+        assert restored.validation_status == ValidationStatus.SUSPECT
+        assert len(restored.cell_validations) == 1
+        assert restored.cell_validations[0].normalized_value == 100.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 11. OCR-corrupted non-numeric-candidate cell detection (Fix 2)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestOCRCorruptedCellDetection:
+    """Validate that OCR-corrupted cells that fail is_numeric_candidate() are
+    still flagged as SUSPECT when they contain significant digit content."""
+
+    def test_ocr_corrupted_cell_with_letter_I_flagged_as_suspect(self) -> None:
+        from tesla_finrag.ingestion.validation import validate_table_cells
+        from tesla_finrag.models import ValidationStatus
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Value"],
+            rows=[["Revenue", "51,6I8"]],
+            raw_text="Metric | Value\nRevenue | 51,6I8",
+        )
+        results = validate_table_cells(chunk)
+
+        suspect_results = [r for r in results if r.status == ValidationStatus.SUSPECT]
+        assert len(suspect_results) == 1
+        assert suspect_results[0].raw_value == "51,6I8"
+        assert suspect_results[0].normalized_value is None
+        assert "OCR suspect" in suspect_results[0].detail
+
+    def test_ocr_corrupted_cell_with_letter_O_flagged_as_suspect(self) -> None:
+        from tesla_finrag.ingestion.validation import validate_table_cells
+        from tesla_finrag.models import ValidationStatus
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Value"],
+            rows=[["Cost", "1O3,456"]],
+            raw_text="Metric | Value\nCost | 1O3,456",
+        )
+        results = validate_table_cells(chunk)
+
+        suspect_results = [r for r in results if r.status == ValidationStatus.SUSPECT]
+        assert len(suspect_results) == 1
+        assert suspect_results[0].raw_value == "1O3,456"
+
+    def test_text_label_with_single_digit_not_flagged(self) -> None:
+        """Labels like 'Item 1' have only 1 digit — not enough to be suspicious."""
+        from tesla_finrag.ingestion.validation import validate_table_cells
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Metric", "Value"],
+            rows=[["Item 1", "100"]],
+            raw_text="Metric | Value\nItem 1 | 100",
+        )
+        results = validate_table_cells(chunk)
+
+        # Only "100" should produce a result (VALID numeric), not "Item 1"
+        assert all(r.raw_value != "Item 1" for r in results)
+
+    def test_has_significant_digits_helper(self) -> None:
+        from tesla_finrag.ingestion.validation import _has_significant_digits
+
+        assert _has_significant_digits("51,6I8") is True
+        assert _has_significant_digits("1O3") is True
+        assert _has_significant_digits("Item 1") is False
+        assert _has_significant_digits("abc") is False
+        assert _has_significant_digits("12") is True
+        assert _has_significant_digits("5") is False
+
+    def test_non_ocr_text_with_digits_not_flagged(self) -> None:
+        """Text like 'FY2023' has digits but no OCR pattern — should not be flagged."""
+        from tesla_finrag.ingestion.validation import validate_table_cells
+
+        chunk = TableChunk(
+            doc_id=uuid4(),
+            section_title="Item 1",
+            headers=["Period", "Value"],
+            rows=[["FY2023", "100"]],
+            raw_text="Period | Value\nFY2023 | 100",
+        )
+        results = validate_table_cells(chunk)
+
+        # FY2023 has 4 digits and passes _has_significant_digits, but
+        # detect_suspicious_cell should NOT flag it (no OCR substitution patterns).
+        assert all(r.raw_value != "FY2023" for r in results)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 12. Pipeline fact reconciliation wiring (Fix 1)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestPipelineFactReconciliation:
+    """Verify that reconcile_table_with_facts is wired into the pipeline."""
+
+    def test_reconcile_filing_tables_attaches_reconciliations(self) -> None:
+        from tesla_finrag.ingestion.pipeline import _reconcile_filing_tables
+
+        doc_id = uuid4()
+        filing = FilingDocument(
+            doc_id=doc_id,
+            filing_type=FilingType.ANNUAL,
+            period_end=date(2023, 12, 31),
+            fiscal_year=2023,
+            accession_number="0001-23-000001",
+            filed_at=date(2024, 2, 1),
+            source_path="data/raw/test.pdf",
+        )
+        table = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "$96,773"]],
+            raw_text="Metric | Revenues\nFY2023 | $96,773",
+        )
+        fact = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            scale=1,
+            period_end=date(2023, 12, 31),
+        )
+
+        all_table_chunks = {doc_id: [table]}
+        updated, mismatches = _reconcile_filing_tables(all_table_chunks, [filing], [fact])
+
+        assert mismatches == 0
+        assert len(updated[doc_id][0].fact_reconciliations) == 1
+        assert updated[doc_id][0].fact_reconciliations[0].matched is True
+
+    def test_reconcile_filing_tables_counts_mismatches(self) -> None:
+        from tesla_finrag.ingestion.pipeline import _reconcile_filing_tables
+
+        doc_id = uuid4()
+        filing = FilingDocument(
+            doc_id=doc_id,
+            filing_type=FilingType.ANNUAL,
+            period_end=date(2023, 12, 31),
+            fiscal_year=2023,
+            accession_number="0001-23-000001",
+            filed_at=date(2024, 2, 1),
+            source_path="data/raw/test.pdf",
+        )
+        table = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "$90,000"]],
+            raw_text="Metric | Revenues\nFY2023 | $90,000",
+        )
+        fact = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            scale=1,
+            period_end=date(2023, 12, 31),
+        )
+
+        all_table_chunks = {doc_id: [table]}
+        updated, mismatches = _reconcile_filing_tables(all_table_chunks, [filing], [fact])
+
+        assert mismatches == 1
+        assert updated[doc_id][0].fact_reconciliations[0].matched is False
+
+    def test_reconcile_filing_tables_marks_validation_failed_on_mismatch(self) -> None:
+        from tesla_finrag.ingestion.pipeline import _reconcile_filing_tables
+        from tesla_finrag.models import ValidationStatus
+
+        doc_id = uuid4()
+        filing = FilingDocument(
+            doc_id=doc_id,
+            filing_type=FilingType.ANNUAL,
+            period_end=date(2023, 12, 31),
+            fiscal_year=2023,
+            accession_number="0001-23-000001",
+            filed_at=date(2024, 2, 1),
+            source_path="data/raw/test.pdf",
+        )
+        table = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["Metric", "Revenues"],
+            rows=[["FY2023", "$90,000"]],
+            raw_text="Metric | Revenues\nFY2023 | $90,000",
+        )
+        fact = FactRecord(
+            doc_id=doc_id,
+            concept="us-gaap:Revenues",
+            label="Revenues",
+            value=96773.0,
+            unit="USD",
+            scale=1,
+            period_end=date(2023, 12, 31),
+        )
+
+        updated, mismatches = _reconcile_filing_tables({doc_id: [table]}, [filing], [fact])
+
+        assert mismatches == 1
+        assert updated[doc_id][0].validation_status == ValidationStatus.FAILED
+
+    def test_reconcile_filing_tables_no_facts_returns_zero_mismatches(self) -> None:
+        from tesla_finrag.ingestion.pipeline import _reconcile_filing_tables
+
+        doc_id = uuid4()
+        table = TableChunk(
+            doc_id=doc_id,
+            section_title="Item 1",
+            headers=["A", "B"],
+            rows=[["x", "100"]],
+            raw_text="A | B\nx | 100",
+        )
+
+        updated, mismatches = _reconcile_filing_tables({doc_id: [table]}, [], [])
+
+        assert mismatches == 0
+        assert updated[doc_id][0].fact_reconciliations == []
+
+    def test_load_facts_from_disk_roundtrips(self, tmp_path: Path) -> None:
+        from tesla_finrag.ingestion.pipeline import _load_facts_from_disk
+        from tesla_finrag.ingestion.writers import write_facts
+
+        facts = [
+            FactRecord(
+                doc_id=uuid4(),
+                concept="us-gaap:Revenues",
+                label="Revenues",
+                value=96773.0,
+                unit="USD",
+                scale=1,
+                period_end=date(2023, 12, 31),
+            ),
+            FactRecord(
+                doc_id=uuid4(),
+                concept="us-gaap:NetIncome",
+                label="Net Income",
+                value=15000.0,
+                unit="USD",
+                scale=1,
+                period_end=date(2023, 12, 31),
+            ),
+        ]
+        write_facts(facts, tmp_path)
+        loaded = _load_facts_from_disk(tmp_path)
+
+        assert len(loaded) == 2
+        assert loaded[0].concept == "us-gaap:Revenues"
+        assert loaded[1].concept == "us-gaap:NetIncome"
+
+    def test_load_facts_from_disk_returns_empty_when_missing(self, tmp_path: Path) -> None:
+        from tesla_finrag.ingestion.pipeline import _load_facts_from_disk
+
+        loaded = _load_facts_from_disk(tmp_path)
+
+        assert loaded == []
+
+    def test_pipeline_reconciliation_diagnostics_in_summary(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify reconciliation mismatches appear in the pipeline summary."""
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                section_map[filing.doc_id] = [
+                    SectionChunk(
+                        doc_id=filing.doc_id,
+                        section_title="Test",
+                        text="test",
+                        token_count=1,
+                    )
+                ]
+                table_map[filing.doc_id] = [
+                    TableChunk(
+                        doc_id=filing.doc_id,
+                        section_title="Item 1",
+                        headers=["Metric", "Revenues"],
+                        rows=[["FY2023", "$90,000"]],
+                        raw_text="Metric | Revenues\nFY2023 | $90,000",
+                    )
+                ]
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
+
+        # Create a companyfacts.json with a mismatched revenue value.
+        companyfacts = {
+            "cik": 1318605,
+            "entityName": "Tesla, Inc.",
+            "facts": {
+                "us-gaap": {
+                    "Revenues": {
+                        "label": "Revenues",
+                        "units": {
+                            "USD": [
+                                {
+                                    "start": "2023-01-01",
+                                    "end": "2023-12-31",
+                                    "val": 96773,
+                                    "accn": "0001-23-000001",
+                                    "form": "10-K",
+                                    "fy": 2023,
+                                    "fp": "FY",
+                                }
+                            ]
+                        },
+                    }
+                }
+            },
+        }
+        (raw_dir / "companyfacts.json").write_text(json.dumps(companyfacts))
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+        summary = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+
+        diag = summary["ingestion_diagnostics"]
+        assert "fact_reconciliation_mismatches" in diag
+        assert diag["fact_reconciliation_mismatches"] > 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 13. Facts loading during reuse (Fix 1 - reuse path)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestFactsLoadDuringReuse:
+    """Verify that facts are loaded from disk when reusing companyfacts output."""
+
+    def test_pipeline_loads_facts_from_disk_on_reuse(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                section_map[filing.doc_id] = [
+                    SectionChunk(
+                        doc_id=filing.doc_id,
+                        section_title="Test",
+                        text="test",
+                        token_count=1,
+                    )
+                ]
+                table_map[filing.doc_id] = [
+                    TableChunk(
+                        doc_id=filing.doc_id,
+                        section_title="Item 1",
+                        headers=["A", "B"],
+                        rows=[["x", "100"]],
+                        raw_text="A | B\nx | 100",
+                    )
+                ]
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
+
+        # Create a minimal companyfacts.json.
+        companyfacts = {
+            "cik": 1318605,
+            "entityName": "Tesla, Inc.",
+            "facts": {
+                "us-gaap": {
+                    "Revenues": {
+                        "label": "Revenues",
+                        "units": {
+                            "USD": [
+                                {
+                                    "start": "2023-01-01",
+                                    "end": "2023-12-31",
+                                    "val": 96773,
+                                    "accn": "0001-23-000001",
+                                    "form": "10-K",
+                                    "fy": 2023,
+                                    "fp": "FY",
+                                }
+                            ]
+                        },
+                    }
+                }
+            },
+        }
+        (raw_dir / "companyfacts.json").write_text(json.dumps(companyfacts))
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+
+        # First run: normalizes and writes facts.
+        first = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        assert first["facts_reused"] is False
+        assert first["fact_records"] > 0
+
+        # Second run: should reuse facts from disk.
+        second = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        assert second["facts_reused"] is True
+        assert second["fact_records"] > 0
+
+    def test_pipeline_reconciles_reused_tables_when_facts_change(
+        self, raw_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tesla_finrag.ingestion.pipeline import run_pipeline
+
+        def fake_run_jobs(
+            filings: list[FilingDocument],
+            raw_dir_value: Path,
+            *,
+            workers: int,
+        ) -> tuple[dict, dict, list[dict], dict[str, int]]:
+            section_map: dict = {}
+            table_map: dict = {}
+            for filing in filings:
+                section_map[filing.doc_id] = [
+                    SectionChunk(
+                        doc_id=filing.doc_id,
+                        section_title="Test",
+                        text="test",
+                        token_count=1,
+                    )
+                ]
+                table_map[filing.doc_id] = [
+                    TableChunk(
+                        doc_id=filing.doc_id,
+                        section_title="Item 1",
+                        headers=["Metric", "Revenues"],
+                        rows=[["FY2023", "100"]],
+                        raw_text="Metric | Revenues\nFY2023 | 100",
+                    )
+                ]
+            return (
+                section_map,
+                table_map,
+                [],
+                {
+                    "fallback_pages": 0,
+                    "failed_pages": 0,
+                    "validation_failed_tables": 0,
+                    "validation_suspect_tables": 0,
+                },
+            )
+
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._run_filing_ingestion_jobs",
+            fake_run_jobs,
+        )
+        monkeypatch.setattr(
+            "tesla_finrag.ingestion.pipeline._build_lancedb_index",
+            lambda *args, **kwargs: 0,
+        )
+
+        output_dir = raw_dir.parent / "processed"
+        companyfacts = {
+            "cik": 1318605,
+            "entityName": "Tesla, Inc.",
+            "facts": {
+                "us-gaap": {
+                    "Revenues": {
+                        "label": "Revenues",
+                        "units": {
+                            "USD": [
+                                {
+                                    "start": "2023-01-01",
+                                    "end": "2023-12-31",
+                                    "val": 100,
+                                    "accn": "0001-23-000001",
+                                    "form": "10-K",
+                                    "fy": 2023,
+                                    "fp": "FY",
+                                }
+                            ]
+                        },
+                    }
+                }
+            },
+        }
+        companyfacts_path = raw_dir / "companyfacts.json"
+        companyfacts_path.write_text(json.dumps(companyfacts))
+
+        first = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        assert first["facts_reused"] is False
+
+        companyfacts["facts"]["us-gaap"]["Revenues"]["units"]["USD"][0]["val"] = 250
+        companyfacts_path.write_text(json.dumps(companyfacts))
+
+        second = run_pipeline(raw_dir=raw_dir, output_dir=output_dir)
+        assert second["facts_reused"] is False
+        assert second["ingestion_diagnostics"]["fact_reconciliation_mismatches"] > 0
+
+        tables_dir = output_dir / "tables"
+        table_files = sorted(tables_dir.rglob("*.json"))
+        assert table_files
+        persisted_chunks = [
+            TableChunk.model_validate_json(path.read_text(encoding="utf-8")) for path in table_files
+        ]
+        assert any(chunk.validation_status == "failed" for chunk in persisted_chunks)
+        mismatched = next(chunk for chunk in persisted_chunks if chunk.fact_reconciliations)
+        assert mismatched.fact_reconciliations[0].matched is False

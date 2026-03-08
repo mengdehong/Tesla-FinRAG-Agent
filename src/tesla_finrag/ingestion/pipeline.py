@@ -11,11 +11,13 @@ import json as jsonlib
 import os
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from time import monotonic
 from uuid import UUID
 
 from tesla_finrag.ingestion.analysis import analyze_filing_pdf
+from tesla_finrag.ingestion.index_segmentation import segment_chunk_for_indexing
 from tesla_finrag.ingestion.manifest import build_manifest, print_manifest_summary
 from tesla_finrag.ingestion.narrative import narrative_chunks_from_analysis
 from tesla_finrag.ingestion.source_adapter import period_key_from_doc, resolve_all_filings
@@ -29,6 +31,7 @@ from tesla_finrag.ingestion.state import (
     save_ingestion_state,
 )
 from tesla_finrag.ingestion.tables import table_chunks_from_analysis
+from tesla_finrag.ingestion.validation import reconcile_table_with_facts
 from tesla_finrag.ingestion.writers import (
     remove_filing_artifacts,
     write_facts,
@@ -37,7 +40,13 @@ from tesla_finrag.ingestion.writers import (
 )
 from tesla_finrag.ingestion.xbrl import normalize_companyfacts, summarize_facts
 from tesla_finrag.logging_config import get_logger, suppress_pdfminer_font_warnings
-from tesla_finrag.models import FilingDocument, SectionChunk, TableChunk
+from tesla_finrag.models import (
+    FactRecord,
+    FilingDocument,
+    SectionChunk,
+    TableChunk,
+    ValidationStatus,
+)
 from tesla_finrag.provider import IndexingEmbeddingProvider
 from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
 
@@ -72,6 +81,11 @@ class FilingIngestionResult:
     table_chunks: list[dict]
     elapsed_seconds: float
     error: str | None = None
+    fallback_pages: int = 0
+    failed_pages: int = 0
+    validation_failed_tables: int = 0
+    validation_suspect_tables: int = 0
+    page_diagnostics: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +132,121 @@ def _filing_artifacts_exist(output_dir: Path, doc_id: UUID) -> bool:
 def _facts_artifact_exists(output_dir: Path) -> bool:
     """Return whether normalized facts output is present."""
     return (output_dir / "facts" / "all_facts.jsonl").is_file()
+
+
+def _load_facts_from_disk(output_dir: Path) -> list[FactRecord]:
+    """Load previously persisted fact records from ``all_facts.jsonl``."""
+    facts_path = output_dir / "facts" / "all_facts.jsonl"
+    if not facts_path.is_file():
+        return []
+    facts: list[FactRecord] = []
+    for line in facts_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            facts.append(FactRecord.model_validate(jsonlib.loads(line)))
+    return facts
+
+
+def _load_tables_from_disk(
+    output_dir: Path,
+    doc_ids: list[UUID],
+) -> dict[UUID, list[TableChunk]]:
+    """Load persisted table artifacts for the requested filings."""
+    tables: dict[UUID, list[TableChunk]] = {}
+    for doc_id in doc_ids:
+        tables_dir = output_dir / "tables" / str(doc_id)
+        chunks: list[TableChunk] = []
+        if tables_dir.is_dir():
+            for path in sorted(tables_dir.glob("*.json")):
+                data = jsonlib.loads(path.read_text(encoding="utf-8"))
+                chunks.append(TableChunk.model_validate(data))
+        tables[doc_id] = chunks
+    return tables
+
+
+def _remediation_for_page_diagnostic(error: str | None, *, used_fallback: bool) -> str:
+    """Return operator guidance for a page-level parser diagnostic."""
+    if error:
+        if error.startswith("no_fallback_available:"):
+            return (
+                "Install the optional fallback parser (`uv sync --extra fallback`) or "
+                "review the source PDF manually."
+            )
+        if error.startswith("fallback_also_empty:"):
+            return "Review the source PDF page manually; no parser produced usable text."
+        if error.startswith("fallback_error:"):
+            return "Inspect PyMuPDF availability/logs and review the source PDF page manually."
+        return "Review the source PDF page manually and inspect parser logs."
+    if used_fallback:
+        return "Fallback parsing was used; review this page before citing extracted evidence."
+    return ""
+
+
+def _page_diagnostic_entry(
+    *,
+    period_key: str,
+    source_path: str,
+    page_number: int,
+    parser_used: str,
+    used_fallback: bool,
+    fallback_reason: str | None,
+    error: str | None,
+) -> dict:
+    """Build a structured, operator-facing parser diagnostic record."""
+    parser_attempts = ["pdfplumber"]
+    if used_fallback:
+        parser_attempts.append("pymupdf")
+    elif error and error.startswith("no_fallback_available:"):
+        parser_attempts.append("pymupdf(unavailable)")
+    elif error and error.startswith(("fallback_also_empty:", "fallback_error:")):
+        parser_attempts.append("pymupdf")
+
+    return {
+        "period_key": period_key,
+        "source_path": source_path,
+        "artifact_type": "page",
+        "page_number": page_number,
+        "parser_used": parser_used,
+        "parser_attempts": parser_attempts,
+        "used_fallback": used_fallback,
+        "fallback_reason": fallback_reason,
+        "error": error,
+        "remediation": _remediation_for_page_diagnostic(error, used_fallback=used_fallback),
+    }
+
+
+def _reconcile_filing_tables(
+    all_table_chunks: dict[UUID, list[TableChunk]],
+    filings: list[FilingDocument],
+    facts: list[FactRecord],
+) -> tuple[dict[UUID, list[TableChunk]], int]:
+    """Reconcile table chunks against authoritative XBRL facts.
+
+    Returns the updated table chunk mapping and the total number of mismatches found.
+    """
+    if not facts:
+        return all_table_chunks, 0
+
+    # Build a doc_id -> period_end lookup from the filing list.
+    doc_period: dict[UUID, date] = {f.doc_id: f.period_end for f in filings}
+
+    total_mismatches = 0
+    for doc_id, tables in all_table_chunks.items():
+        period_end = doc_period.get(doc_id)
+        updated_tables: list[TableChunk] = []
+        for table in tables:
+            reconciliations = reconcile_table_with_facts(table, facts, period_end=period_end)
+            if reconciliations:
+                mismatches = sum(1 for r in reconciliations if not r.matched)
+                total_mismatches += mismatches
+                update: dict[str, object] = {"fact_reconciliations": reconciliations}
+                if mismatches > 0:
+                    update["validation_status"] = ValidationStatus.FAILED
+                table = table.model_copy(update=update)
+            updated_tables.append(table)
+        all_table_chunks[doc_id] = updated_tables
+
+    return all_table_chunks, total_mismatches
 
 
 def _resolve_worker_count(requested_workers: int, active_filings: int) -> int:
@@ -210,6 +339,29 @@ def _ingest_single_filing(
         analysis = analyze_filing_pdf(pdf_path)
         sections = narrative_chunks_from_analysis(analysis, filing.doc_id)
         tables = table_chunks_from_analysis(analysis, filing.doc_id)
+
+        # Collect diagnostics from the analysis.
+        fallback_pages = analysis.fallback_count
+        failed_pages = len(analysis.failed_pages)
+
+        validation_failed = sum(1 for t in tables if t.validation_status == ValidationStatus.FAILED)
+        validation_suspect = sum(
+            1 for t in tables if t.validation_status == ValidationStatus.SUSPECT
+        )
+        page_diagnostics = [
+            _page_diagnostic_entry(
+                period_key=period_key_from_doc(filing),
+                source_path=str(pdf_path),
+                page_number=diag.page_number,
+                parser_used=diag.parser_used,
+                used_fallback=diag.used_fallback,
+                fallback_reason=diag.fallback_reason,
+                error=diag.error,
+            )
+            for diag in analysis.diagnostics
+            if diag.used_fallback or diag.error
+        ]
+
         return FilingIngestionResult(
             index=index,
             doc_id=filing.doc_id,
@@ -218,6 +370,11 @@ def _ingest_single_filing(
             section_chunks=[chunk.model_dump(mode="json") for chunk in sections],
             table_chunks=[chunk.model_dump(mode="json") for chunk in tables],
             elapsed_seconds=monotonic() - start,
+            fallback_pages=fallback_pages,
+            failed_pages=failed_pages,
+            validation_failed_tables=validation_failed,
+            validation_suspect_tables=validation_suspect,
+            page_diagnostics=page_diagnostics,
         )
     except Exception as exc:
         return FilingIngestionResult(
@@ -235,17 +392,27 @@ def _ingest_single_filing(
 def _log_filing_result(result: FilingIngestionResult, total: int) -> None:
     prefix = f"[{result.index}/{total}] {result.period_key}"
     if result.error:
-        logger.error(
-            "%s failed in %.1fs: %s", prefix, result.elapsed_seconds, result.error
-        )
+        logger.error("%s failed in %.1fs: %s", prefix, result.elapsed_seconds, result.error)
         return
 
+    diag_parts: list[str] = []
+    if result.fallback_pages > 0:
+        diag_parts.append(f"fallback_pages={result.fallback_pages}")
+    if result.failed_pages > 0:
+        diag_parts.append(f"failed_pages={result.failed_pages}")
+    if result.validation_failed_tables > 0:
+        diag_parts.append(f"validation_failed_tables={result.validation_failed_tables}")
+    if result.validation_suspect_tables > 0:
+        diag_parts.append(f"validation_suspect_tables={result.validation_suspect_tables}")
+    diag_suffix = f" ({', '.join(diag_parts)})" if diag_parts else ""
+
     logger.info(
-        "%s done in %.1fs: %d narrative chunks, %d table chunks",
+        "%s done in %.1fs: %d narrative chunks, %d table chunks%s",
         prefix,
         result.elapsed_seconds,
         len(result.section_chunks),
         len(result.table_chunks),
+        diag_suffix,
     )
 
 
@@ -254,15 +421,24 @@ def _run_filing_ingestion_jobs(
     raw_dir: Path,
     *,
     workers: int,
-) -> tuple[dict[UUID, list[SectionChunk]], dict[UUID, list[TableChunk]], list[dict]]:
+) -> tuple[
+    dict[UUID, list[SectionChunk]], dict[UUID, list[TableChunk]], list[dict], dict[str, object]
+]:
     """Run filing-level PDF ingestion sequentially or in parallel."""
     total = len(filings)
     all_section_chunks: dict[UUID, list[SectionChunk]] = {}
     all_table_chunks: dict[UUID, list[TableChunk]] = {}
     failed_details: list[dict] = []
+    diagnostics_agg: dict[str, object] = {
+        "fallback_pages": 0,
+        "failed_pages": 0,
+        "validation_failed_tables": 0,
+        "validation_suspect_tables": 0,
+        "parser_diagnostic_details": [],
+    }
 
     if total == 0:
-        return all_section_chunks, all_table_chunks, failed_details
+        return all_section_chunks, all_table_chunks, failed_details, diagnostics_agg
 
     logger.info("Processing %d filings with %d worker(s)...", total, workers)
 
@@ -274,6 +450,14 @@ def _run_filing_ingestion_jobs(
         all_table_chunks[result.doc_id] = [
             TableChunk.model_validate(chunk) for chunk in result.table_chunks
         ]
+        diagnostics_agg["fallback_pages"] += result.fallback_pages
+        diagnostics_agg["failed_pages"] += result.failed_pages
+        diagnostics_agg["validation_failed_tables"] += result.validation_failed_tables
+        diagnostics_agg["validation_suspect_tables"] += result.validation_suspect_tables
+        if result.page_diagnostics:
+            details = diagnostics_agg.setdefault("parser_diagnostic_details", [])
+            if isinstance(details, list):
+                details.extend(result.page_diagnostics)
         if result.error:
             failed_details.append(
                 {
@@ -294,7 +478,7 @@ def _run_filing_ingestion_jobs(
                     raw_dir=str(raw_dir),
                 )
             )
-        return all_section_chunks, all_table_chunks, failed_details
+        return all_section_chunks, all_table_chunks, failed_details, diagnostics_agg
 
     futures: dict[Future[FilingIngestionResult], FilingDocument] = {}
     with ProcessPoolExecutor(max_workers=workers) as executor:
@@ -311,7 +495,7 @@ def _run_filing_ingestion_jobs(
             consume(future.result())
 
     failed_details.sort(key=lambda item: item["index"])
-    return all_section_chunks, all_table_chunks, failed_details
+    return all_section_chunks, all_table_chunks, failed_details, diagnostics_agg
 
 
 # ---------------------------------------------------------------------------
@@ -319,13 +503,108 @@ def _run_filing_ingestion_jobs(
 # ---------------------------------------------------------------------------
 
 _EMBED_BATCH_SIZE = 64
+_INDEX_SCHEMA_VERSION = 2
+_INDEX_PROGRESS_LOG_INTERVAL = 100
 
 
-def _chunk_display_text(chunk: SectionChunk | TableChunk) -> str:
-    """Extract the text used for embedding from a chunk."""
-    if isinstance(chunk, SectionChunk):
-        return chunk.text
-    return chunk.raw_text
+def _chunk_artifact_path(output_dir: Path, chunk: SectionChunk | TableChunk) -> Path:
+    """Return the source processed chunk path for diagnostics."""
+    artifact_dir = "chunks" if isinstance(chunk, SectionChunk) else "tables"
+    return output_dir / artifact_dir / str(chunk.doc_id) / f"{chunk.chunk_id}.json"
+
+
+def _chunk_kind_label(chunk: SectionChunk | TableChunk) -> str:
+    return "section" if isinstance(chunk, SectionChunk) else "table"
+
+
+def _embed_chunk_segments(
+    embedder: IndexingEmbeddingProvider,
+    chunk: SectionChunk | TableChunk,
+    segments: list[str],
+    *,
+    output_dir: Path,
+) -> list[list[float]]:
+    """Embed one chunk's segments with per-segment fallback diagnostics."""
+    if not segments:
+        return []
+
+    try:
+        return embedder.embed_texts(segments)
+    except Exception as chunk_error:
+        recovered_embeddings: list[list[float]] = []
+        for index, segment_text in enumerate(segments, start=1):
+            try:
+                recovered_embeddings.extend(embedder.embed_texts([segment_text]))
+            except Exception as segment_error:
+                artifact_path = _chunk_artifact_path(output_dir, chunk)
+                chunk_kind = _chunk_kind_label(chunk)
+                raise RuntimeError(
+                    "Failed to index chunk after segmentation. "
+                    f"kind={chunk_kind}, doc_id={chunk.doc_id}, chunk_id={chunk.chunk_id}, "
+                    f"artifact={artifact_path}, segment={index}/{len(segments)}, "
+                    f"segment_chars={len(segment_text)}. "
+                    "Try reducing chunk size in the source document or adjusting the embedding "
+                    "backend context settings."
+                ) from segment_error
+        logger.warning(
+            "Recovered index embedding after segment-level retry for %s chunk %s (%s)",
+            _chunk_kind_label(chunk),
+            chunk.chunk_id,
+            chunk_error,
+        )
+        return recovered_embeddings
+
+
+@dataclass(frozen=True)
+class _ChunkSegmentBatchItem:
+    """One embedding-safe segment queued for batch indexing."""
+
+    chunk: SectionChunk | TableChunk
+    segment_text: str
+
+
+def _embed_segment_batch(
+    embedder: IndexingEmbeddingProvider,
+    batch_items: list[_ChunkSegmentBatchItem],
+    *,
+    output_dir: Path,
+) -> list[list[float]]:
+    """Embed a mixed batch, falling back to per-chunk diagnostics on failure."""
+    if not batch_items:
+        return []
+
+    try:
+        return embedder.embed_texts([item.segment_text for item in batch_items])
+    except Exception:
+        recovered_embeddings: list[list[float]] = []
+        current_chunk: SectionChunk | TableChunk | None = None
+        current_segments: list[str] = []
+        for item in batch_items:
+            if current_chunk is None or item.chunk.chunk_id != current_chunk.chunk_id:
+                if current_chunk is not None:
+                    recovered_embeddings.extend(
+                        _embed_chunk_segments(
+                            embedder,
+                            current_chunk,
+                            current_segments,
+                            output_dir=output_dir,
+                        )
+                    )
+                current_chunk = item.chunk
+                current_segments = [item.segment_text]
+                continue
+            current_segments.append(item.segment_text)
+
+        if current_chunk is not None:
+            recovered_embeddings.extend(
+                _embed_chunk_segments(
+                    embedder,
+                    current_chunk,
+                    current_segments,
+                    output_dir=output_dir,
+                )
+            )
+        return recovered_embeddings
 
 
 def _load_chunks_from_disk(
@@ -359,21 +638,23 @@ def _build_lancedb_index(
     """Build or refresh the LanceDB vector index from processed chunk files.
 
     Returns:
-        The total number of indexed chunks after refresh.
+        The total number of indexed vector rows after refresh.
     """
     lancedb_path = output_dir / "lancedb"
     store = LanceDBRetrievalStore(lancedb_path)
     embedder = IndexingEmbeddingProvider.from_settings()
-    expected_chunk_count = sum(
-        entry.section_chunk_count + entry.table_chunk_count
-        for entry in state.filings.values()
+    expected_source_chunk_count = sum(
+        entry.section_chunk_count + entry.table_chunk_count for entry in state.filings.values()
     )
-    if expected_chunk_count == 0:
+    if expected_source_chunk_count == 0:
         store.clear()
         store.save_metadata(
             {
+                "index_schema_version": _INDEX_SCHEMA_VERSION,
                 "embedding_model": "",
                 "embedding_base_url": None,
+                "source_chunk_count": 0,
+                "vector_row_count": 0,
                 "chunk_count": 0,
             }
         )
@@ -385,6 +666,7 @@ def _build_lancedb_index(
         metadata is None
         or not store.has_table
         or metadata.get("embedding_model") != embedder.embedding_model
+        or metadata.get("index_schema_version") != _INDEX_SCHEMA_VERSION
     )
 
     current_doc_ids = [UUID(doc_id) for doc_id in sorted(state.filings)]
@@ -407,45 +689,88 @@ def _build_lancedb_index(
             len(chunks_to_index),
         )
 
-    texts = [_chunk_display_text(chunk) for chunk in chunks_to_index]
-    all_embeddings: list[list[float]] = []
-    for index in range(0, len(texts), _EMBED_BATCH_SIZE):
-        batch = texts[index : index + _EMBED_BATCH_SIZE]
-        all_embeddings.extend(embedder.embed_texts(batch))
-        logger.info(
-            "Embedded batch %d/%d (%d chunks)",
-            index // _EMBED_BATCH_SIZE + 1,
-            (len(texts) + _EMBED_BATCH_SIZE - 1) // _EMBED_BATCH_SIZE,
-            len(batch),
+    embedding_dimensions = int((metadata or {}).get("embedding_dimensions", 0)) if metadata else 0
+    segmented_chunks = 0
+    chunk_count = len(chunks_to_index)
+    chunk_segments: list[tuple[SectionChunk | TableChunk, list]] = []
+    batch_items: list[_ChunkSegmentBatchItem] = []
+
+    for chunk in chunks_to_index:
+        segments = segment_chunk_for_indexing(chunk)
+        if len(segments) > 1:
+            segmented_chunks += 1
+            logger.debug(
+                "Segmented %s chunk %s into %d rows (%d chars)",
+                _chunk_kind_label(chunk),
+                chunk.chunk_id,
+                len(segments),
+                len(chunk.text if isinstance(chunk, SectionChunk) else chunk.raw_text),
+            )
+        chunk_segments.append((chunk, segments))
+        batch_items.extend(
+            _ChunkSegmentBatchItem(chunk=chunk, segment_text=segment.text) for segment in segments
         )
 
-    for chunk, embedding in zip(chunks_to_index, all_embeddings):
-        if isinstance(chunk, SectionChunk):
-            store.index_section_chunk(chunk, embedding)
-        else:
-            store.index_table_chunk(chunk, embedding)
+    all_embeddings: list[list[float]] = []
+    total_batches = max(1, (len(batch_items) + _EMBED_BATCH_SIZE - 1) // _EMBED_BATCH_SIZE)
+    for batch_index, start in enumerate(range(0, len(batch_items), _EMBED_BATCH_SIZE), start=1):
+        batch = batch_items[start : start + _EMBED_BATCH_SIZE]
+        batch_embeddings = _embed_segment_batch(
+            embedder,
+            batch,
+            output_dir=output_dir,
+        )
+        if batch_embeddings and embedding_dimensions == 0:
+            embedding_dimensions = len(batch_embeddings[0])
+        all_embeddings.extend(batch_embeddings)
+        if batch_index == 1 or batch_index == total_batches or batch_index % 10 == 0:
+            logger.info(
+                "Embedded batch %d/%d (%d segment rows)",
+                batch_index,
+                total_batches,
+                len(batch),
+            )
+
+    embedding_cursor = 0
+    for index, (chunk, segments) in enumerate(chunk_segments, start=1):
+        next_cursor = embedding_cursor + len(segments)
+        store.index_chunk_segments(
+            chunk,
+            segments,
+            all_embeddings[embedding_cursor:next_cursor],
+            replace_existing=True,
+        )
+        embedding_cursor = next_cursor
+        if index == 1 or index == chunk_count or index % _INDEX_PROGRESS_LOG_INTERVAL == 0:
+            logger.info(
+                "Indexed chunk %d/%d (%0.1f%%, vector rows=%d)",
+                index,
+                chunk_count,
+                (index / chunk_count) * 100,
+                embedding_cursor,
+            )
 
     store.save_metadata(
         {
+            "index_schema_version": _INDEX_SCHEMA_VERSION,
             "embedding_model": embedder.embedding_model,
             "embedding_base_url": embedder.base_url,
-            "embedding_dimensions": (
-                len(all_embeddings[0])
-                if all_embeddings
-                else (metadata or {}).get("embedding_dimensions", 0)
-            ),
+            "embedding_dimensions": embedding_dimensions,
+            "source_chunk_count": expected_source_chunk_count,
+            "vector_row_count": store.chunk_count,
             "chunk_count": store.chunk_count,
         }
     )
 
     logger.info(
-        "LanceDB index built at %s: %d chunks, model=%s",
+        "LanceDB index built at %s: %d source chunks -> %d vector rows, segmented=%d, model=%s",
         lancedb_path,
+        expected_source_chunk_count,
         store.chunk_count,
+        segmented_chunks,
         embedder.embedding_model,
     )
     return store.chunk_count
-
 
 
 def run_pipeline(
@@ -482,9 +807,7 @@ def run_pipeline(
     # 3. Load reuse state and plan which filings still require parsing.
     state = load_ingestion_state(output_dir)
     current_doc_id_strings = {str(filing.doc_id) for filing in filings}
-    stale_doc_ids = {
-        UUID(doc_id) for doc_id in set(state.filings) - current_doc_id_strings
-    }
+    stale_doc_ids = {UUID(doc_id) for doc_id in set(state.filings) - current_doc_id_strings}
     for doc_id in stale_doc_ids:
         remove_filing_artifacts(doc_id, output_dir)
         state.filings.pop(str(doc_id), None)
@@ -503,13 +826,55 @@ def run_pipeline(
                 plan.reason,
             )
 
-    # 4. Parse narrative chunks and extract tables only for active filings.
+    # 4. Normalize XBRL/companyfacts (moved before filing parsing so facts are
+    #    available for reconciliation against extracted tables).
+    companyfacts_path = raw_dir / companyfacts_filename
+    facts: list[FactRecord] = []
+    facts_reused = False
+    if companyfacts_path.exists():
+        facts_source_fingerprint = fingerprint_file(companyfacts_path)
+        facts_state = state.facts
+        can_reuse_facts = (
+            facts_state is not None
+            and facts_state.source_path == companyfacts_filename
+            and facts_state.source_fingerprint == facts_source_fingerprint
+            and facts_state.parser_fingerprint == _FACTS_PARSER_FINGERPRINT
+            and _facts_artifact_exists(output_dir)
+        )
+        if can_reuse_facts:
+            facts_reused = True
+            logger.info("Reusing unchanged companyfacts output")
+            # Load facts from disk so they're available for reconciliation.
+            facts = _load_facts_from_disk(output_dir)
+        else:
+            logger.info("Normalizing companyfacts...")
+            facts = normalize_companyfacts(companyfacts_path)
+            logger.info(summarize_facts(facts))
+            write_facts(facts, output_dir)
+            state.facts = FactsStateEntry(
+                source_path=companyfacts_filename,
+                source_fingerprint=facts_source_fingerprint,
+                parser_fingerprint=_FACTS_PARSER_FINGERPRINT,
+                fact_record_count=len(facts),
+            )
+    else:
+        logger.warning("companyfacts.json not found at %s", companyfacts_path)
+
+    if facts_reused and state.facts is not None:
+        fact_count = state.facts.fact_record_count
+    else:
+        fact_count = len(facts)
+
+    # 5. Parse narrative chunks and extract tables only for active filings.
     worker_count = _resolve_worker_count(workers, len(filings_to_process))
+    ingestion_diagnostics: dict[str, int] = {}
     try:
-        all_section_chunks, all_table_chunks, failed_details = _run_filing_ingestion_jobs(
-            filings_to_process,
-            raw_dir,
-            workers=worker_count,
+        all_section_chunks, all_table_chunks, failed_details, ingestion_diagnostics = (
+            _run_filing_ingestion_jobs(
+                filings_to_process,
+                raw_dir,
+                workers=worker_count,
+            )
         )
     except (OSError, PermissionError) as exc:
         if worker_count <= 1:
@@ -519,13 +884,37 @@ def run_pipeline(
             exc,
         )
         worker_count = 1
-        all_section_chunks, all_table_chunks, failed_details = _run_filing_ingestion_jobs(
-            filings_to_process,
-            raw_dir,
-            workers=worker_count,
+        all_section_chunks, all_table_chunks, failed_details, ingestion_diagnostics = (
+            _run_filing_ingestion_jobs(
+                filings_to_process,
+                raw_dir,
+                workers=worker_count,
+            )
         )
 
-    # 5. Persist manifest and any reparsed filing outputs.
+    parser_diagnostic_details = list(ingestion_diagnostics.pop("parser_diagnostic_details", []))
+
+    # 6. Reconcile extracted tables against authoritative XBRL facts.
+    if facts:
+        known_doc_ids = {filing.doc_id for filing in filings}
+        reused_doc_ids = [
+            plan.filing.doc_id
+            for plan in filing_plans
+            if plan.reuse_existing and plan.filing.doc_id in known_doc_ids
+        ]
+        if reused_doc_ids:
+            all_table_chunks.update(_load_tables_from_disk(output_dir, reused_doc_ids))
+        all_table_chunks, reconciliation_mismatches = _reconcile_filing_tables(
+            all_table_chunks, filings, facts
+        )
+        ingestion_diagnostics["fact_reconciliation_mismatches"] = reconciliation_mismatches
+        if reconciliation_mismatches > 0:
+            logger.warning(
+                "%d table-vs-fact mismatch(es) found during reconciliation",
+                reconciliation_mismatches,
+            )
+
+    # 7. Persist manifest and any reparsed filing outputs.
     write_manifest(manifest, output_dir)
 
     total_sections = 0
@@ -547,6 +936,12 @@ def run_pipeline(
             if existing_state is not None:
                 total_sections += existing_state.section_chunk_count
                 total_tables += existing_state.table_chunk_count
+            if facts and doc_id in all_table_chunks:
+                tables_dir = output_dir / "tables" / str(doc_id)
+                if tables_dir.is_dir():
+                    for table in all_table_chunks[doc_id]:
+                        path = tables_dir / f"{table.chunk_id}.json"
+                        path.write_text(table.model_dump_json(indent=2), encoding="utf-8")
             continue
 
         if str(plan.pdf_path) in failed_paths:
@@ -575,43 +970,7 @@ def run_pipeline(
                 period_key_from_doc(plan.filing),
             )
 
-    # 6. Normalize XBRL/companyfacts with reuse checks.
-    companyfacts_path = raw_dir / companyfacts_filename
-    facts = []
-    facts_reused = False
-    if companyfacts_path.exists():
-        facts_source_fingerprint = fingerprint_file(companyfacts_path)
-        facts_state = state.facts
-        can_reuse_facts = (
-            facts_state is not None
-            and facts_state.source_path == companyfacts_filename
-            and facts_state.source_fingerprint == facts_source_fingerprint
-            and facts_state.parser_fingerprint == _FACTS_PARSER_FINGERPRINT
-            and _facts_artifact_exists(output_dir)
-        )
-        if can_reuse_facts:
-            facts_reused = True
-            logger.info("Reusing unchanged companyfacts output")
-        else:
-            logger.info("Normalizing companyfacts...")
-            facts = normalize_companyfacts(companyfacts_path)
-            logger.info(summarize_facts(facts))
-            write_facts(facts, output_dir)
-            state.facts = FactsStateEntry(
-                source_path=companyfacts_filename,
-                source_fingerprint=facts_source_fingerprint,
-                parser_fingerprint=_FACTS_PARSER_FINGERPRINT,
-                fact_record_count=len(facts),
-            )
-    else:
-        logger.warning("companyfacts.json not found at %s", companyfacts_path)
-
-    if facts_reused and state.facts is not None:
-        fact_count = state.facts.fact_record_count
-    else:
-        fact_count = len(facts)
-
-    # 7. Build / refresh the LanceDB vector index.
+    # 8. Build / refresh the LanceDB vector index.
     lancedb_path = output_dir / "lancedb"
     refreshed_doc_ids = {
         plan.filing.doc_id
@@ -626,7 +985,35 @@ def run_pipeline(
     )
     save_ingestion_state(state, output_dir)
 
-    # 8. Report coverage.
+    # 9. Log warnings for validation / fallback issues.
+    if ingestion_diagnostics.get("fallback_pages", 0) > 0:
+        logger.warning(
+            "Parser fallback was used on %d page(s) across all filings",
+            ingestion_diagnostics["fallback_pages"],
+        )
+    if ingestion_diagnostics.get("failed_pages", 0) > 0:
+        logger.warning(
+            "%d page(s) had parser failures (no usable extraction)",
+            ingestion_diagnostics["failed_pages"],
+        )
+    if ingestion_diagnostics.get("validation_failed_tables", 0) > 0:
+        logger.warning(
+            "%d table(s) have FAILED numeric validation — review before citing",
+            ingestion_diagnostics["validation_failed_tables"],
+        )
+    if ingestion_diagnostics.get("validation_suspect_tables", 0) > 0:
+        logger.warning(
+            "%d table(s) have SUSPECT numeric cells (possible OCR issues)",
+            ingestion_diagnostics["validation_suspect_tables"],
+        )
+
+    if ingestion_diagnostics.get("fact_reconciliation_mismatches", 0) > 0:
+        logger.warning(
+            "%d table-vs-fact reconciliation mismatch(es) detected",
+            ingestion_diagnostics["fact_reconciliation_mismatches"],
+        )
+
+    # 10. Report coverage.
     summary = {
         "manifest_entries": manifest.total,
         "filings": len(filings),
@@ -650,6 +1037,8 @@ def run_pipeline(
         ],
         "failed_details": failed_details,
         "facts_reused": facts_reused,
+        "ingestion_diagnostics": ingestion_diagnostics,
+        "parser_diagnostic_details": parser_diagnostic_details,
         "lancedb_status": "ok",
         "lancedb_path": str(lancedb_path.resolve()),
         "lancedb_chunks_indexed": lancedb_chunks_indexed,
@@ -659,7 +1048,17 @@ def run_pipeline(
 
     logger.info(
         "Pipeline complete: %s",
-        {k: v for k, v in summary.items() if k not in {"gap_details", "failed_details"}},
+        {
+            k: v
+            for k, v in summary.items()
+            if k
+            not in {
+                "gap_details",
+                "failed_details",
+                "ingestion_diagnostics",
+                "parser_diagnostic_details",
+            }
+        },
     )
     if summary["manifest_gaps"] > 0:
         logger.warning("Coverage gaps detected:")
@@ -669,5 +1068,9 @@ def run_pipeline(
         logger.warning("Failed PDF ingestions detected:")
         for failure in failed_details:
             logger.warning("  %s", failure)
+    if parser_diagnostic_details:
+        logger.warning("Parser diagnostic details:")
+        for detail in parser_diagnostic_details:
+            logger.warning("  %s", detail)
 
     return summary

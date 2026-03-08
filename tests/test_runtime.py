@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 
+from tesla_finrag.ingestion.index_segmentation import ChunkSegment
 from tesla_finrag.models import (
     FactRecord,
     FilingDocument,
@@ -93,9 +94,12 @@ def _build_valid_fixture(root: Path) -> tuple[FilingDocument, SectionChunk, Tabl
     store.index_table_chunk(table, embedding)
     store.save_metadata(
         {
+            "index_schema_version": 2,
             "embedding_model": "nomic-embed-text",
             "embedding_base_url": "http://localhost:11434/v1",
             "embedding_dimensions": len(embedding),
+            "source_chunk_count": 2,
+            "vector_row_count": 2,
             "chunk_count": 2,
         }
     )
@@ -154,6 +158,36 @@ class TestLoadValidCorpus:
         facts = facts_repo.get_facts(doc_id=filing.doc_id)
         assert len(facts) == 1
         assert facts[0].concept == fact.concept
+
+    def test_load_accepts_segmented_lancedb_index(self, tmp_path: Path) -> None:
+        filing, section, table, _ = _build_valid_fixture(tmp_path)
+        store = LanceDBRetrievalStore(tmp_path / "lancedb")
+        store.clear()
+        embedding = [0.1, 0.2, 0.3]
+        store.index_chunk_segments(
+            section,
+            [
+                ChunkSegment(text="segment-a", segment_index=0, segment_count=2),
+                ChunkSegment(text="segment-b", segment_index=1, segment_count=2),
+            ],
+            [embedding, embedding],
+        )
+        store.index_table_chunk(table, embedding)
+        store.save_metadata(
+            {
+                "index_schema_version": 2,
+                "embedding_model": "nomic-embed-text",
+                "embedding_base_url": "http://localhost:11434/v1",
+                "embedding_dimensions": len(embedding),
+                "source_chunk_count": 2,
+                "vector_row_count": 3,
+                "chunk_count": 3,
+            }
+        )
+
+        corpus_repo, _, retrieval_store = load_processed_corpus(tmp_path)
+        assert corpus_repo.get_filing(filing.doc_id) is not None
+        assert retrieval_store.chunk_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +291,7 @@ class TestMalformedArtifacts:
         with pytest.raises(MissingProcessedArtifactError, match="chunks table"):
             load_processed_corpus(tmp_path)
 
-    def test_lancedb_chunk_count_mismatch_raises(self, tmp_path: Path) -> None:
+    def test_lancedb_orphaned_lineage_raises(self, tmp_path: Path) -> None:
         _build_valid_fixture(tmp_path)
         store = LanceDBRetrievalStore(tmp_path / "lancedb")
         section = SectionChunk(
@@ -269,13 +303,44 @@ class TestMalformedArtifacts:
         store.index_section_chunk(section, [0.9, 0.8, 0.7])
         store.save_metadata(
             {
+                "index_schema_version": 2,
                 "embedding_model": "nomic-embed-text",
                 "embedding_base_url": "http://localhost:11434/v1",
                 "embedding_dimensions": 3,
+                "source_chunk_count": 3,
+                "vector_row_count": store.chunk_count,
                 "chunk_count": store.chunk_count,
             }
         )
-        with pytest.raises(MalformedProcessedArtifactError, match="chunk count"):
+        with pytest.raises(MalformedProcessedArtifactError, match="orphaned lineage"):
+            load_processed_corpus(tmp_path)
+
+    def test_lancedb_duplicate_segment_ordinal_raises(self, tmp_path: Path) -> None:
+        _, section, table, _ = _build_valid_fixture(tmp_path)
+        store = LanceDBRetrievalStore(tmp_path / "lancedb")
+        store.clear()
+        embedding = [0.1, 0.2, 0.3]
+        store.index_chunk_segments(
+            section,
+            [
+                ChunkSegment(text="segment-a", segment_index=0, segment_count=2),
+                ChunkSegment(text="segment-b", segment_index=0, segment_count=2),
+            ],
+            [embedding, embedding],
+        )
+        store.index_table_chunk(table, embedding)
+        store.save_metadata(
+            {
+                "index_schema_version": 2,
+                "embedding_model": "nomic-embed-text",
+                "embedding_base_url": "http://localhost:11434/v1",
+                "embedding_dimensions": 3,
+                "source_chunk_count": 2,
+                "vector_row_count": 3,
+                "chunk_count": 3,
+            }
+        )
+        with pytest.raises(MalformedProcessedArtifactError, match="duplicate segment ordinals"):
             load_processed_corpus(tmp_path)
 
     def test_incompatible_index_model_raises(self, tmp_path: Path) -> None:
@@ -283,9 +348,12 @@ class TestMalformedArtifacts:
         store = LanceDBRetrievalStore(tmp_path / "lancedb")
         store.save_metadata(
             {
+                "index_schema_version": 2,
                 "embedding_model": "different-model",
                 "embedding_base_url": "http://localhost:11434/v1",
                 "embedding_dimensions": 3,
+                "source_chunk_count": 2,
+                "vector_row_count": store.chunk_count,
                 "chunk_count": store.chunk_count,
             }
         )

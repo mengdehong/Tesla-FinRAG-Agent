@@ -46,6 +46,8 @@ def _configure_root(level: str) -> None:
         stream=sys.stdout,
         force=False,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     _configured = True
 
 

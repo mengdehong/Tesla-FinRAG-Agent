@@ -55,6 +55,7 @@ in-memory vector store on every startup.
 - `ingest` now reuses unchanged filing artifacts and unchanged `companyfacts` output across reruns.
 - The completion summary distinguishes `Reprocessed`, `Reused`, and `Failed filings`, plus whether facts were reused.
 - A run is only considered successful if the LanceDB index was built successfully; indexing failures now fail `ingest`.
+- LanceDB now stores segmented vector rows with source-chunk lineage metadata; indexed row count can exceed processed chunk count.
 - Automatic parallelism now sizes itself to the filings that still need parsing rather than the total manifest size.
 - On this repo's raw corpus, ingestion is expected to be minute-scale rather than instant because PDF parsing is CPU-heavy.
 - If you want the most conservative debugging path, force sequential mode:
@@ -67,6 +68,13 @@ uv run python -m tesla_finrag ingest --workers 1
 
 ```bash
 rm -rf data/processed
+uv run python -m tesla_finrag ingest
+```
+
+- If you only need to migrate the LanceDB schema, rebuild just the index:
+
+```bash
+rm -rf data/processed/lancedb
 uv run python -m tesla_finrag ingest
 ```
 

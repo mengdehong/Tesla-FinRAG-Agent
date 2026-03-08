@@ -4,6 +4,10 @@ Each financial table is emitted as an independent :class:`TableChunk` with
 structured metadata (headers, rows) and a serialised fallback ``raw_text``
 suitable for embedding.  Tables are not merged into surrounding narrative
 text.
+
+Parser provenance and per-cell validation metadata are attached to each
+chunk so downstream consumers can distinguish trusted evidence from
+suspect or corrupted extractions.
 """
 
 from __future__ import annotations
@@ -13,7 +17,11 @@ from pathlib import Path
 from uuid import UUID
 
 from tesla_finrag.ingestion.analysis import FilingPdfAnalysis, analyze_filing_pdf
-from tesla_finrag.models import ChunkKind, TableChunk
+from tesla_finrag.ingestion.validation import (
+    overall_validation_status,
+    validate_table_cells,
+)
+from tesla_finrag.models import ChunkKind, ParserProvenance, TableChunk
 
 # ---------------------------------------------------------------------------
 # Section context detection
@@ -130,6 +138,13 @@ def table_chunks_from_analysis(
         # Update section context.
         current_section = _current_section_from_page(page_text, current_section)
 
+        # Build parser provenance from page-level diagnostics.
+        provenance = ParserProvenance(
+            parser_name=page.parser_used,
+            used_fallback=page.used_fallback,
+            fallback_reason=page.fallback_reason,
+        )
+
         for table_idx, raw_table in enumerate(page.raw_tables):
             if not raw_table:
                 continue
@@ -144,18 +159,29 @@ def table_chunks_from_analysis(
 
             caption = _extract_caption(page_text, table_idx)
 
-            chunks.append(
-                TableChunk(
-                    doc_id=doc_id,
-                    kind=ChunkKind.TABLE,
-                    page_number=page.page_number,
-                    section_title=current_section,
-                    caption=caption,
-                    headers=headers,
-                    rows=rows,
-                    raw_text=raw_text,
-                )
+            chunk = TableChunk(
+                doc_id=doc_id,
+                kind=ChunkKind.TABLE,
+                page_number=page.page_number,
+                section_title=current_section,
+                caption=caption,
+                headers=headers,
+                rows=rows,
+                raw_text=raw_text,
+                parser_provenance=provenance,
             )
+
+            # Validate numeric cells.
+            cell_results = validate_table_cells(chunk)
+            if cell_results:
+                chunk = chunk.model_copy(
+                    update={
+                        "cell_validations": cell_results,
+                        "validation_status": overall_validation_status(cell_results),
+                    }
+                )
+
+            chunks.append(chunk)
 
     return chunks
 

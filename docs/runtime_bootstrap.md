@@ -43,6 +43,11 @@ local ingestion state file under `data/processed/`, so small edits should only
 reparse the invalidated filings. On the bundled raw corpus, expect minute-scale
 runtime for cold runs; PDF parsing is CPU-heavy.
 
+This release introduces a segmented LanceDB row schema (`index_schema_version: 2`)
+for oversized chunk handling. If your existing `data/processed/lancedb/` was built
+before this schema, rebuild the processed corpus so runtime bootstrap and retrieval
+lineage checks can pass.
+
 #### Custom paths
 
 ```bash
@@ -113,6 +118,10 @@ or reuse `OPENAI_API_KEY` for the indexing client.
 Both ingestion and runtime query embeddings share the same model to ensure
 consistency.
 
+`_index_metadata.json` now stores both `source_chunk_count` and
+`vector_row_count`. `vector_row_count` can be higher than the processed chunk
+count when large section/table chunks are segmented at indexing time.
+
 ## Troubleshooting
 
 ### Missing processed artifacts
@@ -149,6 +158,13 @@ uv run python -m tesla_finrag ingest
 **Fix:** Re-run ingestion to rebuild the index with the current embedding model:
 
 ```bash
+uv run python -m tesla_finrag ingest
+```
+
+If you are upgrading from a pre-segmentation index schema, force a clean rebuild:
+
+```bash
+rm -rf data/processed/lancedb
 uv run python -m tesla_finrag ingest
 ```
 

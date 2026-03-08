@@ -12,10 +12,14 @@ from uuid import UUID
 
 import pytest
 
+from tesla_finrag.ingestion.index_segmentation import ChunkSegment
 from tesla_finrag.models import SectionChunk, TableChunk
-from tesla_finrag.retrieval import HybridRetrievalService, InMemoryCorpusRepository, InMemoryFactsRepository
+from tesla_finrag.retrieval import (
+    HybridRetrievalService,
+    InMemoryCorpusRepository,
+    InMemoryFactsRepository,
+)
 from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -54,8 +58,9 @@ def populated_store(tmp_path: Path) -> LanceDBRetrievalStore:
 @pytest.fixture()
 def corpus_repo() -> InMemoryCorpusRepository:
     """Minimal corpus repo with chunks matching the store."""
-    from tesla_finrag.models import FilingDocument, FilingType
     from datetime import date
+
+    from tesla_finrag.models import FilingDocument, FilingType
 
     repo = InMemoryCorpusRepository()
     filing = FilingDocument(
@@ -141,3 +146,33 @@ class TestLanceDBHybridRetrieval:
         assert meta is not None
         assert meta["embedding_model"] == "nomic-embed-text"
         assert meta["chunk_count"] == 2
+
+    def test_hybrid_service_dedupes_segmented_vector_rows(
+        self,
+        tmp_path: Path,
+        corpus_repo: InMemoryCorpusRepository,
+        facts_repo: InMemoryFactsRepository,
+    ) -> None:
+        store = LanceDBRetrievalStore(tmp_path / "lancedb")
+        section = corpus_repo.get_section_chunks(_DOC_ID)[0]
+        store.index_chunk_segments(
+            section,
+            [
+                ChunkSegment(text="segment one", segment_index=0, segment_count=2),
+                ChunkSegment(text="segment two", segment_index=1, segment_count=2),
+            ],
+            [_EMBEDDING, _EMBEDDING],
+        )
+
+        service = HybridRetrievalService(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            retrieval_store=store,
+            embed_fn=lambda _: _EMBEDDING,
+        )
+
+        from tesla_finrag.models import QueryPlan
+
+        bundle = service.retrieve(QueryPlan(original_query="revenue"))
+        assert len(bundle.section_chunks) == 1
+        assert bundle.section_chunks[0].chunk_id == section.chunk_id

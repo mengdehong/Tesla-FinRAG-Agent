@@ -1,12 +1,8 @@
 """LanceDB-backed retrieval store for persistent vector search.
 
 Implements the :class:`RetrievalStore` contract using a file-backed LanceDB
-database under ``data/processed/lancedb``.  Chunk rows are keyed by stable
-``chunk_id`` and support filtered similarity search by ``doc_id`` and chunk
-kind.
-
-Index metadata (embedding model, dimensions, build timestamp) is persisted
-as a JSON sidecar so the runtime can detect incompatible indexes at startup.
+database under ``data/processed/lancedb``. Rows are segment-level vectors with
+lineage metadata pointing back to source processed chunks.
 """
 
 from __future__ import annotations
@@ -18,7 +14,9 @@ from pathlib import Path
 from uuid import UUID
 
 import lancedb
+import pandas as pd
 
+from tesla_finrag.ingestion.index_segmentation import ChunkSegment
 from tesla_finrag.models import SectionChunk, TableChunk
 from tesla_finrag.repositories import RetrievalStore
 
@@ -27,6 +25,25 @@ logger = logging.getLogger(__name__)
 # Arrow schema for the chunks table.
 _CHUNKS_TABLE = "chunks"
 _METADATA_FILE = "_index_metadata.json"
+
+
+def _safe_str(value: object | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value != value:
+        return ""
+    return str(value)
+
+
+def _safe_int(value: object | None, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, float) and value != value:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 class LanceDBRetrievalStore(RetrievalStore):
@@ -63,7 +80,13 @@ class LanceDBRetrievalStore(RetrievalStore):
         if self._table is None:
             return
         doc_id_str = str(doc_id)
-        self._table.delete(f'doc_id = "{doc_id_str}"')
+        try:
+            self._table.delete(
+                f'doc_id = "{doc_id_str}" OR source_doc_id = "{doc_id_str}"'
+            )
+        except Exception:
+            # Backward-compatible fallback for older table schema.
+            self._table.delete(f'doc_id = "{doc_id_str}"')
 
     def clear(self) -> None:
         """Remove every indexed row while keeping the DB directory in place."""
@@ -75,25 +98,82 @@ class LanceDBRetrievalStore(RetrievalStore):
 
     def index_section_chunk(self, chunk: SectionChunk, embedding: list[float]) -> None:
         """Add or update a section chunk with its pre-computed embedding."""
-        self._upsert_chunk(
-            chunk_id=str(chunk.chunk_id),
-            doc_id=str(chunk.doc_id),
-            kind="section",
-            section_title=chunk.section_title,
-            display_text=chunk.text,
-            embedding=embedding,
+        self.index_chunk_segments(
+            chunk,
+            [
+                ChunkSegment(
+                    text=chunk.text,
+                    segment_index=0,
+                    segment_count=1,
+                )
+            ],
+            [embedding],
         )
 
     def index_table_chunk(self, chunk: TableChunk, embedding: list[float]) -> None:
         """Add or update a table chunk with its pre-computed embedding."""
-        self._upsert_chunk(
-            chunk_id=str(chunk.chunk_id),
-            doc_id=str(chunk.doc_id),
-            kind="table",
-            section_title=chunk.section_title,
-            display_text=chunk.raw_text,
-            embedding=embedding,
+        self.index_chunk_segments(
+            chunk,
+            [
+                ChunkSegment(
+                    text=chunk.raw_text,
+                    segment_index=0,
+                    segment_count=1,
+                )
+            ],
+            [embedding],
         )
+
+    def index_chunk_segments(
+        self,
+        chunk: SectionChunk | TableChunk,
+        segments: list[ChunkSegment],
+        embeddings: list[list[float]],
+        *,
+        replace_existing: bool = True,
+    ) -> None:
+        """Insert segmented vector rows for one processed source chunk."""
+        if len(segments) != len(embeddings):
+            raise ValueError(
+                "segments/embeddings length mismatch: "
+                f"{len(segments)} != {len(embeddings)}"
+            )
+        if not segments:
+            return
+
+        source_chunk_id = str(chunk.chunk_id)
+        source_doc_id = str(chunk.doc_id)
+        source_kind = "section" if isinstance(chunk, SectionChunk) else "table"
+
+        if replace_existing and self._table is not None:
+            try:
+                self._table.delete(
+                    f'source_chunk_id = "{source_chunk_id}" OR chunk_id = "{source_chunk_id}"'
+                )
+            except Exception:
+                # Backward-compatible fallback for old schema rows.
+                self._table.delete(f'chunk_id = "{source_chunk_id}"')
+
+        rows: list[dict[str, object]] = []
+        for segment, embedding in zip(segments, embeddings):
+            row_chunk_id = f"{source_chunk_id}:{segment.segment_index}"
+            rows.append(
+                {
+                    "chunk_id": row_chunk_id,
+                    "doc_id": source_doc_id,
+                    "kind": source_kind,
+                    "section_title": chunk.section_title,
+                    "display_text": segment.text,
+                    "source_chunk_id": source_chunk_id,
+                    "source_doc_id": source_doc_id,
+                    "source_kind": source_kind,
+                    "segment_id": row_chunk_id,
+                    "segment_index": segment.segment_index,
+                    "segment_count": segment.segment_count,
+                    "vector": embedding,
+                }
+            )
+        self._ensure_table(rows)
 
     def search(
         self,
@@ -109,78 +189,108 @@ class LanceDBRetrievalStore(RetrievalStore):
         if self._table is None:
             return []
 
-        query = self._table.search(query_embedding).limit(top_k)
+        total_rows = max(self.chunk_count, top_k)
+        row_limit = min(total_rows, max(top_k * 4, top_k))
+        best_hits: dict[str, tuple[SectionChunk | TableChunk, float]] = {}
 
-        if doc_ids is not None:
-            id_strs = [str(d) for d in doc_ids]
-            filter_expr = " OR ".join(f'doc_id = "{did}"' for did in id_strs)
-            query = query.where(filter_expr)
+        while True:
+            query = self._table.search(query_embedding).limit(row_limit)
+            if doc_ids is not None:
+                id_strs = [str(d) for d in doc_ids]
+                filter_expr = " OR ".join(
+                    f'(doc_id = "{did}" OR source_doc_id = "{did}")' for did in id_strs
+                )
+                query = query.where(filter_expr)
 
-        try:
-            results = query.to_pandas()
-        except Exception:
-            logger.exception("LanceDB search failed")
-            return []
+            try:
+                results = query.to_pandas()
+            except Exception:
+                logger.exception("LanceDB search failed")
+                return []
 
-        hits: list[tuple[SectionChunk | TableChunk, float]] = []
+            best_hits = self._collect_best_hits(results)
+            if len(best_hits) >= top_k or row_limit >= total_rows or len(results) < row_limit:
+                break
+            row_limit = min(total_rows, max(row_limit * 2, row_limit + top_k * 4))
+
+        return sorted(best_hits.values(), key=lambda item: item[1], reverse=True)[:top_k]
+
+    def _collect_best_hits(
+        self,
+        results: pd.DataFrame,
+    ) -> dict[str, tuple[SectionChunk | TableChunk, float]]:
+        best_hits: dict[str, tuple[SectionChunk | TableChunk, float]] = {}
         for _, row in results.iterrows():
-            chunk_id = UUID(row["chunk_id"])
-            doc_id = UUID(row["doc_id"])
-            kind = row["kind"]
+            source_chunk_id = _safe_str(row.get("source_chunk_id")) or _safe_str(
+                row.get("chunk_id")
+            )
+            source_doc_id = _safe_str(row.get("source_doc_id")) or _safe_str(row.get("doc_id"))
+            kind = _safe_str(row.get("source_kind")) or _safe_str(row.get("kind"))
             score = float(1.0 - row.get("_distance", 0.0))
+            if not source_chunk_id or not source_doc_id:
+                continue
+            try:
+                chunk_id = UUID(source_chunk_id)
+                doc_id = UUID(source_doc_id)
+            except ValueError:
+                logger.warning(
+                    "Skipping LanceDB row with invalid lineage ids: chunk=%s, doc=%s",
+                    source_chunk_id,
+                    source_doc_id,
+                )
+                continue
 
             if kind == "section":
                 chunk: SectionChunk | TableChunk = SectionChunk(
                     chunk_id=chunk_id,
                     doc_id=doc_id,
-                    section_title=row["section_title"],
-                    text=row["display_text"],
+                    section_title=_safe_str(row.get("section_title")),
+                    text=_safe_str(row.get("display_text")),
                     token_count=0,
                 )
             else:
                 chunk = TableChunk(
                     chunk_id=chunk_id,
                     doc_id=doc_id,
-                    section_title=row["section_title"],
+                    section_title=_safe_str(row.get("section_title")),
                     caption="",
                     headers=[],
                     rows=[],
-                    raw_text=row["display_text"],
+                    raw_text=_safe_str(row.get("display_text")),
                 )
-            hits.append((chunk, score))
+            existing = best_hits.get(source_chunk_id)
+            if existing is None or score > existing[1]:
+                best_hits[source_chunk_id] = (chunk, score)
+        return best_hits
 
-        return hits
+    def fetch_lineage_rows(self) -> list[dict[str, object]]:
+        """Return lineage-aware row metadata for runtime validation."""
+        if self._table is None:
+            return []
+        try:
+            results = self._table.to_pandas()
+        except Exception:
+            logger.exception("Failed to read LanceDB rows for lineage validation")
+            return []
 
-    # -- Upsert helper ------------------------------------------------------
-
-    def _upsert_chunk(
-        self,
-        *,
-        chunk_id: str,
-        doc_id: str,
-        kind: str,
-        section_title: str,
-        display_text: str,
-        embedding: list[float],
-    ) -> None:
-        """Insert or replace a chunk row by chunk_id."""
-        row = {
-            "chunk_id": chunk_id,
-            "doc_id": doc_id,
-            "kind": kind,
-            "section_title": section_title,
-            "display_text": display_text,
-            "vector": embedding,
-        }
-        # Remove existing row with the same chunk_id, then add
-        if self._table is not None:
-            try:
-                self._table.delete(f'chunk_id = "{chunk_id}"')
-            except Exception:
-                pass  # Table might be empty or row might not exist
-            self._table.add([row])
-        else:
-            self._ensure_table([row])
+        rows: list[dict[str, object]] = []
+        for _, row in results.iterrows():
+            source_chunk_id = _safe_str(row.get("source_chunk_id")) or _safe_str(
+                row.get("chunk_id")
+            )
+            source_doc_id = _safe_str(row.get("source_doc_id")) or _safe_str(row.get("doc_id"))
+            source_kind = _safe_str(row.get("source_kind")) or _safe_str(row.get("kind"))
+            rows.append(
+                {
+                    "row_chunk_id": _safe_str(row.get("chunk_id")),
+                    "source_chunk_id": source_chunk_id,
+                    "source_doc_id": source_doc_id,
+                    "source_kind": source_kind,
+                    "segment_index": _safe_int(row.get("segment_index"), 0),
+                    "segment_count": max(1, _safe_int(row.get("segment_count"), 1)),
+                }
+            )
+        return rows
 
     # -- Metadata -----------------------------------------------------------
 
@@ -211,7 +321,7 @@ class LanceDBRetrievalStore(RetrievalStore):
 
     @property
     def chunk_count(self) -> int:
-        """Return the number of indexed chunks."""
+        """Return the number of indexed vector rows."""
         if self._table is None:
             return 0
         try:

@@ -16,6 +16,9 @@ dependencies = [
     "pyarrow>=15.0.0",
 ]
 
+[project.optional-dependencies]
+fallback = ["pymupdf>=1.24.0"]
+
 [dependency-groups]
 dev = [
     "hatchling>=1.29.0",

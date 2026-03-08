@@ -180,6 +180,146 @@ def _load_facts(facts_path: Path) -> list[FactRecord]:
     return facts
 
 
+def _coerce_int(value: object, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _validate_lancedb_lineage(
+    *,
+    retrieval_store: LanceDBRetrievalStore,
+    metadata: dict,
+    section_chunks: list[SectionChunk],
+    table_chunks: list[TableChunk],
+) -> tuple[int, int]:
+    """Validate segmented LanceDB rows against the processed corpus."""
+    expected_chunks: dict[str, tuple[str, str]] = {}
+    for chunk in section_chunks:
+        expected_chunks[str(chunk.chunk_id)] = (str(chunk.doc_id), "section")
+    for chunk in table_chunks:
+        expected_chunks[str(chunk.chunk_id)] = (str(chunk.doc_id), "table")
+
+    expected_source_chunk_count = len(expected_chunks)
+    lineage_rows = retrieval_store.fetch_lineage_rows()
+    if not lineage_rows:
+        raise MalformedProcessedArtifactError(
+            "LanceDB index has no readable lineage rows. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+
+    seen_source_chunk_ids: set[str] = set()
+    seen_segment_ordinals: dict[str, set[int]] = {}
+    declared_segment_counts: dict[str, int] = {}
+
+    for row in lineage_rows:
+        source_chunk_id = str(row.get("source_chunk_id", "")).strip()
+        source_doc_id = str(row.get("source_doc_id", "")).strip()
+        source_kind = str(row.get("source_kind", "")).strip()
+        row_chunk_id = str(row.get("row_chunk_id", "")).strip()
+        segment_index = _coerce_int(row.get("segment_index"), 0)
+        segment_count = _coerce_int(row.get("segment_count"), 1)
+
+        expected = expected_chunks.get(source_chunk_id)
+        if expected is None:
+            raise MalformedProcessedArtifactError(
+                "LanceDB index contains orphaned lineage rows for unknown source chunk "
+                f"{source_chunk_id} (row={row_chunk_id}). "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+
+        expected_doc_id, expected_kind = expected
+        if source_doc_id and source_doc_id != expected_doc_id:
+            raise MalformedProcessedArtifactError(
+                "LanceDB lineage doc_id mismatch for source chunk "
+                f"{source_chunk_id}: expected {expected_doc_id}, found {source_doc_id}. "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+        if source_kind and source_kind != expected_kind:
+            raise MalformedProcessedArtifactError(
+                "LanceDB lineage kind mismatch for source chunk "
+                f"{source_chunk_id}: expected {expected_kind}, found {source_kind}. "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+        if segment_count < 1 or segment_index < 0 or segment_index >= segment_count:
+            raise MalformedProcessedArtifactError(
+                "LanceDB segment lineage is inconsistent for source chunk "
+                f"{source_chunk_id}: segment_index={segment_index}, "
+                f"segment_count={segment_count}. "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+
+        previous_declared = declared_segment_counts.get(source_chunk_id)
+        if previous_declared is None:
+            declared_segment_counts[source_chunk_id] = segment_count
+        elif previous_declared != segment_count:
+            raise MalformedProcessedArtifactError(
+                "LanceDB segment_count is inconsistent across rows for source chunk "
+                f"{source_chunk_id}: saw {previous_declared} and {segment_count}. "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+
+        ordinals = seen_segment_ordinals.setdefault(source_chunk_id, set())
+        if segment_index in ordinals:
+            raise MalformedProcessedArtifactError(
+                "LanceDB contains duplicate segment ordinals for source chunk "
+                f"{source_chunk_id}: segment_index={segment_index}. "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+        ordinals.add(segment_index)
+        seen_source_chunk_ids.add(source_chunk_id)
+
+    for source_chunk_id, expected_segments in declared_segment_counts.items():
+        observed_segments = len(seen_segment_ordinals[source_chunk_id])
+        if observed_segments != expected_segments:
+            raise MalformedProcessedArtifactError(
+                "LanceDB segment lineage is incomplete for source chunk "
+                f"{source_chunk_id}: expected {expected_segments}, found {observed_segments}. "
+                "Re-run the ingestion pipeline to rebuild the index."
+            )
+
+    if len(seen_source_chunk_ids) != expected_source_chunk_count:
+        raise MalformedProcessedArtifactError(
+            "LanceDB source chunk coverage does not match the processed corpus: "
+            f"expected {expected_source_chunk_count}, found {len(seen_source_chunk_ids)}. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+
+    vector_row_count = retrieval_store.chunk_count
+    if vector_row_count != len(lineage_rows):
+        raise MalformedProcessedArtifactError(
+            "LanceDB row count is inconsistent with readable lineage rows: "
+            f"count_rows={vector_row_count}, lineage_rows={len(lineage_rows)}. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+
+    stored_source_chunk_count = _coerce_int(
+        metadata.get("source_chunk_count"),
+        _coerce_int(metadata.get("chunk_count"), 0),
+    )
+    stored_vector_row_count = _coerce_int(
+        metadata.get("vector_row_count"),
+        _coerce_int(metadata.get("chunk_count"), 0),
+    )
+    if stored_source_chunk_count != expected_source_chunk_count:
+        raise MalformedProcessedArtifactError(
+            "LanceDB metadata source chunk count does not match the processed corpus: "
+            f"expected {expected_source_chunk_count}, found {stored_source_chunk_count}. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+    if stored_vector_row_count != vector_row_count:
+        raise MalformedProcessedArtifactError(
+            "LanceDB metadata vector row count does not match the index: "
+            f"expected {stored_vector_row_count}, found {vector_row_count}. "
+            "Re-run the ingestion pipeline to rebuild the index."
+        )
+
+    return expected_source_chunk_count, vector_row_count
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
@@ -242,14 +382,6 @@ def load_processed_corpus(
             "Run the ingestion pipeline first to generate processed data."
         )
 
-    expected_chunk_count = len(section_chunks) + len(table_chunks)
-    if retrieval_store.chunk_count != expected_chunk_count:
-        raise MalformedProcessedArtifactError(
-            "LanceDB index chunk count does not match the processed corpus: "
-            f"expected {expected_chunk_count}, found {retrieval_store.chunk_count}. "
-            "Re-run the ingestion pipeline to rebuild the index."
-        )
-
     settings = get_settings()
     stored_model = meta.get("embedding_model", "")
     if stored_model and stored_model != settings.indexing_embedding_model:
@@ -259,14 +391,22 @@ def load_processed_corpus(
             "Re-run the ingestion pipeline to rebuild the index."
         )
 
+    source_chunk_count, vector_row_count = _validate_lancedb_lineage(
+        retrieval_store=retrieval_store,
+        metadata=meta,
+        section_chunks=section_chunks,
+        table_chunks=table_chunks,
+    )
+
     logger.info(
         "Loaded processed corpus: %d filings, %d section chunks, "
-        "%d table chunks, %d facts, LanceDB chunks: %d",
+        "%d table chunks, %d facts, LanceDB source chunks: %d, vector rows: %d",
         len(filings),
         len(section_chunks),
         len(table_chunks),
         len(facts),
-        retrieval_store.chunk_count,
+        source_chunk_count,
+        vector_row_count,
     )
 
     return corpus_repo, facts_repo, retrieval_store

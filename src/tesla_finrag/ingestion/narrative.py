@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import UUID
 
 from tesla_finrag.ingestion.analysis import FilingPdfAnalysis, analyze_filing_pdf
-from tesla_finrag.models import ChunkKind, SectionChunk
+from tesla_finrag.models import ChunkKind, ParserProvenance, SectionChunk
 
 # ---------------------------------------------------------------------------
 # Section detection
@@ -194,15 +194,24 @@ def narrative_chunks_from_analysis(
     overlap_tokens: int = _OVERLAP_TOKENS,
 ) -> list[SectionChunk]:
     """Build narrative chunks from a shared filing analysis result."""
-    pages = [
-        (page.page_number, page.text) for page in analysis.pages if page.text.strip()
-    ]
+    pages = [(page.page_number, page.text) for page in analysis.pages if page.text.strip()]
     sections = _detect_sections(pages)
+
+    # Build a page-number -> provenance lookup for attaching to chunks.
+    page_provenance: dict[int, ParserProvenance] = {}
+    for page in analysis.pages:
+        page_provenance[page.page_number] = ParserProvenance(
+            parser_name=page.parser_used,
+            used_fallback=page.used_fallback,
+            fallback_reason=page.fallback_reason,
+        )
+
     chunks: list[SectionChunk] = []
 
     for section_title, start_page, section_text in sections:
         if not section_text.strip():
             continue
+        provenance = page_provenance.get(start_page)
         text_chunks = _chunk_text(section_text, max_chunk_tokens, overlap_tokens)
         for chunk_text, char_offset in text_chunks:
             if not chunk_text.strip():
@@ -216,6 +225,7 @@ def narrative_chunks_from_analysis(
                     section_title=section_title,
                     text=chunk_text,
                     token_count=_estimate_tokens(chunk_text),
+                    parser_provenance=provenance,
                 )
             )
 

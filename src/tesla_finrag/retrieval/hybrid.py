@@ -168,6 +168,25 @@ class HybridRetrievalService(RetrievalService):
                 unique.append(fact)
         return unique
 
+    def _build_chunk_lookup(
+        self,
+        *,
+        doc_ids: list[UUID] | None,
+    ) -> tuple[dict[UUID, SectionChunk], dict[UUID, TableChunk]]:
+        """Map source chunk ids to canonical processed chunk records."""
+        section_by_id: dict[UUID, SectionChunk] = {}
+        table_by_id: dict[UUID, TableChunk] = {}
+        filings = self._corpus.list_filings()
+        doc_id_filter = set(doc_ids) if doc_ids is not None else None
+        for filing in filings:
+            if doc_id_filter is not None and filing.doc_id not in doc_id_filter:
+                continue
+            for section in self._corpus.get_section_chunks(filing.doc_id):
+                section_by_id[section.chunk_id] = section
+            for table in self._corpus.get_table_chunks(filing.doc_id):
+                table_by_id[table.chunk_id] = table
+        return section_by_id, table_by_id
+
     def retrieve(self, plan: QueryPlan) -> EvidenceBundle:
         """Retrieve evidence by fusing lexical, vector, and fact results.
 
@@ -207,24 +226,25 @@ class HybridRetrievalService(RetrievalService):
             fused = []
 
         # --- Collect chunks for the bundle ---
+        section_lookup, table_lookup = self._build_chunk_lookup(doc_ids=doc_ids)
         section_chunks: list[SectionChunk] = []
         table_chunks: list[TableChunk] = []
         retrieval_scores: dict[str, float] = {}
+        seen_sections: set[UUID] = set()
+        seen_tables: set[UUID] = set()
 
         for result in fused:
             retrieval_scores[str(result.chunk_id)] = result.score
             if result.chunk_type == ChunkKind.SECTION:
-                for filing in self._corpus.list_filings():
-                    for chunk in self._corpus.get_section_chunks(filing.doc_id):
-                        if chunk.chunk_id == result.chunk_id:
-                            section_chunks.append(chunk)
-                            break
+                section = section_lookup.get(result.chunk_id)
+                if section is not None and section.chunk_id not in seen_sections:
+                    seen_sections.add(section.chunk_id)
+                    section_chunks.append(section)
             elif result.chunk_type == ChunkKind.TABLE:
-                for filing in self._corpus.list_filings():
-                    for chunk in self._corpus.get_table_chunks(filing.doc_id):
-                        if chunk.chunk_id == result.chunk_id:
-                            table_chunks.append(chunk)
-                            break
+                table = table_lookup.get(result.chunk_id)
+                if table is not None and table.chunk_id not in seen_tables:
+                    seen_tables.add(table.chunk_id)
+                    table_chunks.append(table)
 
         return EvidenceBundle(
             plan_id=plan.plan_id,

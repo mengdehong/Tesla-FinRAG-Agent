@@ -15,6 +15,7 @@ from uuid import UUID
 
 import pytest
 
+from tesla_finrag.ingestion.index_segmentation import ChunkSegment
 from tesla_finrag.models import SectionChunk, TableChunk
 from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
 from tesla_finrag.runtime import MissingProcessedArtifactError, validate_processed_dir
@@ -194,6 +195,79 @@ class TestLanceDBRetrievalStore:
         results = store.search(sample_embedding, top_k=5)
         assert len(results) == 1
         assert results[0][0].doc_id == chunk_1.doc_id
+
+    def test_segmented_rows_dedupe_back_to_source_chunk(
+        self,
+        lancedb_dir: Path,
+        sample_embedding: list[float],
+    ) -> None:
+        store = LanceDBRetrievalStore(lancedb_dir)
+        chunk = SectionChunk(
+            doc_id=UUID("00000000-0000-0000-0000-000000000009"),
+            section_title="MD&A",
+            text="Long narrative chunk",
+            token_count=3,
+        )
+        store.index_chunk_segments(
+            chunk,
+            [
+                ChunkSegment(text="segment-0", segment_index=0, segment_count=2),
+                ChunkSegment(text="segment-1", segment_index=1, segment_count=2),
+            ],
+            [sample_embedding, sample_embedding],
+        )
+
+        assert store.chunk_count == 2
+        hits = store.search(sample_embedding, top_k=5)
+        assert len(hits) == 1
+        assert hits[0][0].chunk_id == chunk.chunk_id
+
+        lineage_rows = store.fetch_lineage_rows()
+        assert len(lineage_rows) == 2
+        assert {row["source_chunk_id"] for row in lineage_rows} == {str(chunk.chunk_id)}
+        assert {row["segment_index"] for row in lineage_rows} == {0, 1}
+
+    def test_search_overfetches_until_top_k_unique_source_chunks(
+        self,
+        lancedb_dir: Path,
+    ) -> None:
+        store = LanceDBRetrievalStore(lancedb_dir)
+        dominant = SectionChunk(
+            doc_id=UUID("00000000-0000-0000-0000-000000000010"),
+            section_title="Dominant",
+            text="dominant chunk",
+            token_count=2,
+        )
+        store.index_chunk_segments(
+            dominant,
+            [
+                ChunkSegment(text=f"segment-{index}", segment_index=index, segment_count=20)
+                for index in range(20)
+            ],
+            [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] for _ in range(20)],
+        )
+
+        for index in range(4):
+            other = SectionChunk(
+                doc_id=UUID(f"00000000-0000-0000-0000-00000000002{index}"),
+                section_title=f"Other {index}",
+                text=f"other chunk {index}",
+                token_count=3,
+            )
+            store.index_section_chunk(
+                other,
+                [0.99 - (index * 0.01), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            )
+
+        hits = store.search([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], top_k=4)
+
+        assert len(hits) == 4
+        assert hits[0][0].section_title == "Dominant"
+        assert {hit[0].section_title for hit in hits[1:]} == {
+            "Other 0",
+            "Other 1",
+            "Other 2",
+        }
 
 
 # ---------------------------------------------------------------------------

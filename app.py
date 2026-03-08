@@ -34,9 +34,9 @@ with st.sidebar:
         "Provider",
         options=[mode.value for mode in ProviderMode],
         format_func=lambda value: (
-            "local (deterministic)"
+            "local (Ollama)"
             if value == ProviderMode.LOCAL.value
-            else "openai-compatible (remote)"
+            else "remote (OpenAI-compatible)"
         ),
         index=0,
     )
@@ -85,7 +85,7 @@ with st.sidebar:
     st.caption("Tesla FinRAG Agent v0.1.0")
     st.caption(
         "Mode: processed runtime + "
-        + ("local deterministic pipeline" if selected_provider == "local" else "remote provider")
+        + ("local Ollama provider" if selected_provider == "local" else "remote provider")
     )
     st.caption(f"Corpus years: {', '.join(str(year) for year in available_years)}")
 

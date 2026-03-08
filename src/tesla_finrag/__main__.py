@@ -117,6 +117,20 @@ def _run_ingest(args: argparse.Namespace) -> int:
                 f"({failure.get('elapsed_seconds', 0)}s): {failure.get('error', 'unknown error')}"
             )
 
+    parser_diagnostic_details = summary.get("parser_diagnostic_details", [])
+    if parser_diagnostic_details:
+        print("\nParser Diagnostics:")
+        for detail in parser_diagnostic_details:
+            page_number = detail.get("page_number", "?")
+            reason = detail.get("error") or detail.get("fallback_reason") or "fallback used"
+            print(
+                f"  - {detail.get('period_key', '?')} page {page_number} "
+                f"via {detail.get('parser_used', '?')}: {reason}"
+            )
+            remediation = detail.get("remediation")
+            if remediation:
+                print(f"    remediation: {remediation}")
+
     print("=" * 60)
     return 0
 

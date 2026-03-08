@@ -82,6 +82,9 @@ uv run python -m tesla_finrag ask -q "What was Tesla's total revenue in FY2023?"
 **Evaluation runner:**
 ```bash
 uv run python -m tesla_finrag.evaluation.runner
+
+# accept this run as latest baseline
+uv run python -m tesla_finrag.evaluation.runner --accept-baseline
 ```
 
 ## Processed Corpus Layout
@@ -195,18 +198,21 @@ After running the evaluation workflow, the following artifacts are available:
 # 1. Build the processed corpus
 uv run python -m tesla_finrag ingest
 
-# 2. Run the evaluation benchmark (saves run + updates latest baseline)
+# 2. Run the evaluation benchmark (saves timestamped run)
 uv run python -m tesla_finrag.evaluation.runner
 
-# 3. Inspect the latest baseline
+# 3. Accept the run as latest baseline (explicit operator action)
+uv run python -m tesla_finrag.evaluation.runner --accept-baseline
+
+# 4. Inspect the latest baseline
 cat data/evaluation/latest_baseline.json
 
-# 4. Review failure analyses
+# 5. Review failure analyses
 cat data/evaluation/failure_analyses.json
 
-# 5. Read the delivery report
+# 6. Read the delivery report
 cat docs/DELIVERY.md
 
-# 6. Launch the interactive demo
+# 7. Launch the interactive demo
 uv run streamlit run app.py
 ```

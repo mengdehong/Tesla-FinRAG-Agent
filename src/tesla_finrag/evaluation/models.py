@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tesla_finrag.models import AnswerStatus
 
@@ -93,9 +93,17 @@ class FailureAnalysis(BaseModel):
     mitigation: str = Field(description="Concrete improvement direction.")
     severity: Severity
     baseline_run_id: str = Field(
-        default="",
         description="Run ID of the baseline from which this analysis was derived.",
     )
+
+    @field_validator("baseline_run_id")
+    @classmethod
+    def _validate_baseline_run_id(cls, value: str) -> str:
+        run_id = value.strip()
+        if not run_id:
+            msg = "baseline_run_id must not be blank"
+            raise ValueError(msg)
+        return run_id
 
 
 # ---------------------------------------------------------------------------

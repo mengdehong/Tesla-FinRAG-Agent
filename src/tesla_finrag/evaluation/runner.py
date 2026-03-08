@@ -13,6 +13,7 @@ Or programmatically::
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -89,6 +90,19 @@ def load_baseline(path: Path | None = None) -> BaselineSummary:
         msg = f"Latest baseline not found: {p}"
         raise FileNotFoundError(msg)
     return BaselineSummary.model_validate_json(p.read_text(encoding="utf-8"))
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Tesla FinRAG benchmark evaluation.")
+    parser.add_argument(
+        "--accept-baseline",
+        action="store_true",
+        help=(
+            "Mark this run as the latest accepted baseline by updating "
+            "data/evaluation/latest_baseline.json"
+        ),
+    )
+    return parser.parse_args([] if argv is None else argv)
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +264,12 @@ class EvaluationRunner:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """Run the evaluation benchmark and print results."""
     from tesla_finrag.guidance import format_corpus_guidance
     from tesla_finrag.runtime import ProcessedCorpusError
+
+    args = _parse_args(argv)
 
     try:
         runner = EvaluationRunner()
@@ -288,9 +304,14 @@ def main() -> None:
     path = runner.save_run(run)
     print(f"\nRun saved to: {path}")
 
-    baseline_path = runner.save_baseline(run, path)
-    print(f"Latest baseline updated: {baseline_path}")
+    if args.accept_baseline:
+        baseline_path = runner.save_baseline(run, path)
+        print(f"Latest accepted baseline updated: {baseline_path}")
+    else:
+        print(
+            "Latest accepted baseline unchanged. Re-run with --accept-baseline to accept this run."
+        )
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

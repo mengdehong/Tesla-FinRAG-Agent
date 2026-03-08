@@ -51,10 +51,12 @@ User Question
 
 | Filing Type | Years | Count |
 |---|---|---|
-| 10-K (Annual) | 2021–2024 | 4 |
+| 10-K (Annual) | 2021–2025 | 5 |
 | 10-Q (Quarterly) | 2021 Q1–Q3, 2022 Q1–Q3, 2023 Q1–Q3, 2024 Q1–Q3, 2025 Q1–Q3 | 15 |
 | XBRL Facts | `companyfacts.json` | 1 |
 | **Total source files** | | **21** |
+
+Evidence source: `data/raw/` currently contains 5 annual PDFs matching `*_全年_10-K.pdf`, 15 quarterly PDFs matching `*_Q*_10-Q.pdf`, and `companyfacts.json`.
 
 ### Processed Artifacts
 
@@ -165,11 +167,14 @@ uv run python -m tesla_finrag ask -q "What was Tesla's total revenue in FY2023?"
 ### Running the Evaluation
 
 ```bash
-# Run the benchmark suite and update the latest baseline
+# Run benchmark and save timestamped run artifact
 uv run python -m tesla_finrag.evaluation.runner
+
+# Accept the run as latest baseline (updates latest_baseline.json)
+uv run python -m tesla_finrag.evaluation.runner --accept-baseline
 ```
 
-This executes all 9 benchmark questions, saves a timestamped run file to `data/evaluation/runs/`, and updates the latest baseline pointer at `data/evaluation/latest_baseline.json`.
+This executes all 9 benchmark questions and saves a timestamped run file to `data/evaluation/runs/`. The stable pointer `data/evaluation/latest_baseline.json` is only updated when `--accept-baseline` is provided.
 
 ### Validation Commands
 

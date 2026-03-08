@@ -9,9 +9,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -39,7 +39,7 @@ class DownloadError(RuntimeError):
 
 
 def http_get_bytes(url: str, user_agent: str, timeout: int = 45, retries: int = 3) -> bytes:
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for i in range(1, retries + 1):
         req = Request(
             url,
@@ -59,9 +59,15 @@ def http_get_bytes(url: str, user_agent: str, timeout: int = 45, retries: int = 
     raise DownloadError(f"GET failed after {retries} tries: {url} -> {last_err}")
 
 
-def http_download_file(url: str, user_agent: str, out_path: Path, timeout: int = 60, retries: int = 3) -> bool:
+def http_download_file(
+    url: str,
+    user_agent: str,
+    out_path: Path,
+    timeout: int = 60,
+    retries: int = 3,
+) -> bool:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for i in range(1, retries + 1):
         req = Request(
             url,
@@ -160,7 +166,7 @@ def chrome_print_html_to_pdf(chrome_bin: str, html_path: Path, out_pdf: Path) ->
             f"--print-to-pdf={out_pdf}",
             html_path.resolve().as_uri(),
         ]
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(cmd, check=True, capture_output=True)
     finally:
         shutil.rmtree(user_data_dir, ignore_errors=True)
 
@@ -194,7 +200,7 @@ def fallback_via_sec_html_and_print(
         html_path.unlink(missing_ok=True)
 
 
-def find_chrome(preferred: Optional[str]) -> Optional[str]:
+def find_chrome(preferred: str | None) -> str | None:
     if preferred:
         p = Path(preferred)
         return str(p) if p.exists() else None
@@ -205,7 +211,9 @@ def find_chrome(preferred: Optional[str]) -> Optional[str]:
     return None
 
 
-def iter_target_filings(filings: Iterable[Filing], start_year: int, end_year: int) -> Iterable[Filing]:
+def iter_target_filings(
+    filings: Iterable[Filing], start_year: int, end_year: int
+) -> Iterable[Filing]:
     for f in filings:
         y = int(f.report_date[:4])
         if start_year <= y <= end_year:
@@ -213,7 +221,9 @@ def iter_target_filings(filings: Iterable[Filing], start_year: int, end_year: in
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Download Tesla 10-K/10-Q PDFs (2021-2025) reproducibly.")
+    parser = argparse.ArgumentParser(
+        description="Download Tesla 10-K/10-Q PDFs (2021-2025) reproducibly."
+    )
     parser.add_argument("--start-year", type=int, default=2021)
     parser.add_argument("--end-year", type=int, default=2025)
     parser.add_argument("--out-dir", default="raw")
@@ -233,8 +243,16 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    submissions = json.loads(http_get_bytes(SEC_SUBMISSIONS_URL, user_agent=args.user_agent).decode("utf-8"))
-    filings = list(iter_target_filings(parse_filings(submissions, args.start_year, args.end_year), args.start_year, args.end_year))
+    submissions = json.loads(
+        http_get_bytes(SEC_SUBMISSIONS_URL, user_agent=args.user_agent).decode("utf-8")
+    )
+    filings = list(
+        iter_target_filings(
+            parse_filings(submissions, args.start_year, args.end_year),
+            args.start_year,
+            args.end_year,
+        )
+    )
 
     if not filings:
         print("No target filings found.")

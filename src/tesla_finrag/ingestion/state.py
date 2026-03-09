@@ -77,13 +77,9 @@ def save_ingestion_state(state: IngestionState, output_dir: Path) -> Path:
 def fingerprint_file(path: Path) -> str:
     """Compute a stable content fingerprint for a source file."""
     digest = hashlib.sha256()
-    digest.update(path.name.encode("utf-8"))
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
-    stat = path.stat()
-    digest.update(str(stat.st_size).encode("utf-8"))
-    digest.update(str(stat.st_mtime_ns).encode("utf-8"))
     return digest.hexdigest()
 
 

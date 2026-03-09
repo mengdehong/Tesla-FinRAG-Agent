@@ -1733,6 +1733,23 @@ class TestPipeline:
             )
 
 
+def test_fingerprint_file_depends_on_content_only(tmp_path: Path) -> None:
+    from tesla_finrag.ingestion.state import fingerprint_file
+
+    first_path = tmp_path / "first.pdf"
+    first_path.write_bytes(b"same-content")
+    first_fingerprint = fingerprint_file(first_path)
+
+    second_path = tmp_path / "renamed.pdf"
+    second_path.write_bytes(b"same-content")
+    second_fingerprint = fingerprint_file(second_path)
+
+    assert first_fingerprint == second_fingerprint
+
+    first_path.touch()
+    assert fingerprint_file(first_path) == first_fingerprint
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 6. Numeric validation regression tests
 # ═══════════════════════════════════════════════════════════════════════════

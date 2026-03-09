@@ -144,8 +144,7 @@ def extract_periods(question: str) -> list[date]:
             continue
 
     year_mentions = [
-        (match.start(), int(match.group(1)))
-        for match in re.finditer(r"(20[12]\d)", question)
+        (match.start(), int(match.group(1))) for match in re.finditer(r"(20[12]\d)", question)
     ]
     last_year: int | None = None
     for m in _CHINESE_QUARTER_RE.finditer(question):
@@ -454,8 +453,7 @@ def _build_normalized_search_text(
     """Build normalized search text for retrieval over primarily English filings."""
     concept_labels = [_concept_to_human_label(concept, question=question) for concept in metrics]
     period_labels = [
-        _period_label(period, classify_period_semantics(period, question))
-        for period in periods
+        _period_label(period, classify_period_semantics(period, question)) for period in periods
     ]
     normalized_terms = _extract_normalized_terms(question)
 

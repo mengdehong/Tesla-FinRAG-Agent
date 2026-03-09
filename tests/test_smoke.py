@@ -49,7 +49,7 @@ def _make_ollama_provider(answer_text: str = "Local Ollama answer.") -> OllamaPr
     return OllamaProvider(
         client=_make_fake_client(answer_text),
         embedding_model="nomic-embed-text",
-        chat_model="qwen3.5:4b",
+        chat_model="qwen2.5:1.5b",
         base_url="http://localhost:11434/v1",
     )
 
@@ -107,7 +107,7 @@ class TestLocalModeRuntime:
         assert answer.retrieval_debug["provider_mode"] == "local"
         assert answer.retrieval_debug["embedding_provider"] == "shared-indexing-backend"
         assert answer.retrieval_debug["answer_provider"] == "ollama"
-        assert answer.retrieval_debug["answer_model"] == "qwen3.5:4b"
+        assert answer.retrieval_debug["answer_model"] == "qwen2.5:1.5b"
 
     def test_local_mode_without_provider_raises(self) -> None:
         corpus_repo, facts_repo = _seed_demo_repositories()

@@ -21,7 +21,7 @@ ENV OLLAMA_BASE_URL=http://ollama:11434/v1
 ENV INDEXING_EMBEDDING_BASE_URL=http://ollama:11434/v1
 ENV LANCEDB_URI=/app/data/processed/lancedb
 
-CMD ["/bin/sh", "-c", "echo 'Pulling Ollama models...' && curl -s http://ollama:11434/api/pull -d '{\"name\": \"qwen3.5:4b\"}' && curl -s http://ollama:11434/api/pull -d '{\"name\": \"nomic-embed-text\"}' && echo 'Running ingestion...' && python -m tesla_finrag ingest"]
+CMD ["/bin/sh", "-c", "echo 'Pulling Ollama models...' && curl -s http://ollama:11434/api/pull -d '{\"name\": \"qwen2.5:1.5b\"}' && curl -s http://ollama:11434/api/pull -d '{\"name\": \"nomic-embed-text\"}' && echo 'Running ingestion...' && python -m tesla_finrag ingest"]
 
 FROM base AS app
 

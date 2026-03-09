@@ -63,7 +63,7 @@ class TestSettingsProviderFields:
         assert s.openai_timeout_seconds == 60
         assert s.ollama_base_url == "http://localhost:11434/v1"
         assert s.ollama_timeout_seconds == 60
-        assert s.ollama_chat_model == "qwen3.5:4b"
+        assert s.ollama_chat_model == "qwen2.5:1.5b"
         assert s.ollama_embedding_model == "nomic-embed-text"
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:

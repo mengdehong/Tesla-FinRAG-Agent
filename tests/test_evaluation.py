@@ -39,6 +39,7 @@ from tesla_finrag.evaluation.workbench import (
     WorkbenchPipeline,
     _seed_demo_repositories,
 )
+from tesla_finrag.i18n import response_language_directive
 from tesla_finrag.models import (
     AnswerPayload,
     AnswerStatus,
@@ -1008,6 +1009,53 @@ class TestDemoResponseContract:
         assert answer.status == AnswerStatus.OK
         assert "supply chain" in answer.answer_text.lower()
         assert answer.retrieval_debug["composite_local_fallback_used"] is True
+
+    def test_composite_provider_answer_falls_back_for_chinese_cues(self) -> None:
+        from unittest.mock import MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.info.provider_name = "mock"
+        mock_provider.info.as_dict.return_value = {}
+        mock_provider.embed_texts.side_effect = lambda texts: [[0.0]] * len(texts)
+        mock_provider.generate_grounded_answer.return_value = (
+            "Based on the provided financial data, the company's free cash flow for FY2023 "
+            "is $4.36 billion."
+        )
+
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider=mock_provider,
+        )
+        question = "2023年10-K中，特斯拉提到了哪些供应链风险？FY2022到FY2023汽车销售成本如何变化？"
+
+        _, _, answer = pipeline.run(question)
+
+        assert answer.status == AnswerStatus.OK
+        assert "供应链" in answer.answer_text
+        assert answer.retrieval_debug["composite_local_fallback_used"] is True
+
+    def test_chinese_query_defaults_remote_response_language(self) -> None:
+        from unittest.mock import MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.info.provider_name = "mock"
+        mock_provider.info.as_dict.return_value = {}
+        mock_provider.embed_texts.side_effect = lambda texts: [[0.0]] * len(texts)
+        mock_provider.generate_grounded_answer.return_value = "模拟答案"
+
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider=mock_provider,
+        )
+
+        pipeline.run("特斯拉FY2023的毛利率是多少？请展示毛利润除以总营收的计算过程。")
+
+        kwargs = mock_provider.generate_grounded_answer.call_args.kwargs
+        assert kwargs["response_language"] == response_language_directive("zh_CN")
 
     def test_answer_payload_has_required_fields(self) -> None:
         plan_id = uuid4()

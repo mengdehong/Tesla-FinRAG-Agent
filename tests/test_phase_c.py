@@ -151,6 +151,32 @@ class TestExtractValueFromTable:
         assert match is None
 
 
+class TestExtractValueFromTextBlock:
+    def test_extract_automotive_cost_from_statement_text(self):
+        text = """
+        Tesla, Inc.
+        Consolidated Statements of Operations
+        (in millions, except per share data)
+        Year Ended December 31,
+        2024 2023 2022
+        Total automotive cost of revenues 62,873 66,389 51,108
+        """
+        match_2023 = EvidenceLinker._extract_value_from_text_block(
+            text,
+            ["total automotive cost of revenues"],
+            period=date(2023, 12, 31),
+        )
+        match_2022 = EvidenceLinker._extract_value_from_text_block(
+            text,
+            ["total automotive cost of revenues"],
+            period=date(2022, 12, 31),
+        )
+        assert match_2023 is not None
+        assert match_2022 is not None
+        assert match_2023[0] == pytest.approx(66389.0)
+        assert match_2022[0] == pytest.approx(51108.0)
+
+
 class TestInferTableScale:
     """Test _infer_table_scale static method."""
 

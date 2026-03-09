@@ -95,6 +95,13 @@ class QueryLanguage(StrEnum):
     MIXED = "mixed"
 
 
+class SemanticScope(StrEnum):
+    """Optional business scope attached to a query or sub-query."""
+
+    GENERAL = "general"
+    AUTOMOTIVE = "automotive"
+
+
 # ---------------------------------------------------------------------------
 # Retrieval result
 # ---------------------------------------------------------------------------
@@ -369,6 +376,10 @@ class SubQuery(BaseModel):
         description="XBRL concepts to retrieve for this sub-query.",
     )
     period_semantics: PeriodSemantics = PeriodSemantics.UNKNOWN
+    semantic_scope: SemanticScope | None = Field(
+        None,
+        description="Optional business scope such as 'automotive'.",
+    )
 
     model_config = {"frozen": True}
 
@@ -398,6 +409,7 @@ class AnswerShape(StrEnum):
     COMPARISON = "comparison"
     RANKING = "ranking"
     COMPOSITE = "composite"
+    TIME_SERIES = "time_series"
 
 
 class CalculationOperand(BaseModel):
@@ -439,6 +451,10 @@ class QueryPlan(BaseModel):
         description="Normalized retrieval text used to search the filing corpus.",
     )
     query_type: QueryType = QueryType.HYBRID_REASONING
+    semantic_scope: SemanticScope | None = Field(
+        None,
+        description="Optional business scope such as 'automotive'.",
+    )
     sub_questions: list[str] = Field(default_factory=list)
     sub_queries: list[SubQuery] = Field(
         default_factory=list,

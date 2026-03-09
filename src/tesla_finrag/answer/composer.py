@@ -97,6 +97,7 @@ class GroundedAnswerComposer(AnswerService):
             required_periods=plan.required_periods,
             period_semantics=plan.period_semantics if plan.period_semantics else None,
             original_query=plan.original_query,
+            semantic_scope=plan.semantic_scope,
         )
 
         # Step 2: Check evidence sufficiency (per-period coverage)
@@ -218,6 +219,9 @@ class GroundedAnswerComposer(AnswerService):
             "fact_records_count": len(enriched.facts),
             "retrieval_scores": enriched.retrieval_scores,
             "query_type": plan.query_type.value,
+            "semantic_scope": (
+                plan.semantic_scope.value if plan.semantic_scope is not None else None
+            ),
             "calculation_intent": (
                 plan.calculation_intent.value if plan.calculation_intent is not None else None
             ),
@@ -943,8 +947,12 @@ class GroundedAnswerComposer(AnswerService):
                 return self._insufficient_numeric_message(plan)
 
         parts: list[str] = []
+        narrative_header = self._narrative_summary_line(plan)
 
-        if plan.query_type == QueryType.NUMERIC_CALCULATION and calc_trace:
+        if plan.answer_shape == AnswerShape.TIME_SERIES and bundle.facts:
+            parts.append(self._compose_time_series_text(plan, bundle))
+
+        elif plan.query_type == QueryType.NUMERIC_CALCULATION and calc_trace:
             # Lead with the calculation result
             parts.append(self._sec_filings_intro(plan))
             for line in calc_trace:
@@ -963,6 +971,8 @@ class GroundedAnswerComposer(AnswerService):
 
         elif plan.query_type == QueryType.NARRATIVE_COMPARE and bundle.section_chunks:
             parts.append(self._sec_filings_intro(plan))
+            if narrative_header:
+                parts.append(narrative_header)
             for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
                 excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
                 parts.append(f"[{chunk.section_title}] {excerpt}")
@@ -971,6 +981,8 @@ class GroundedAnswerComposer(AnswerService):
             # Hybrid: combine narrative and facts
             if calc_trace or bundle.section_chunks:
                 parts.append(self._sec_filings_intro(plan))
+            if bundle.section_chunks and narrative_header:
+                parts.append(narrative_header)
             if calc_trace:
                 for line in calc_trace:
                     parts.append(line)
@@ -997,6 +1009,10 @@ class GroundedAnswerComposer(AnswerService):
         followed by a limitation note for the numeric lane if it failed.
         """
         parts: list[str] = [self._sec_filings_intro(plan)]
+
+        narrative_header = self._narrative_summary_line(plan)
+        if narrative_header:
+            parts.append(narrative_header)
 
         # Narrative lane: include section chunks
         for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
@@ -1031,12 +1047,18 @@ class GroundedAnswerComposer(AnswerService):
         cues: list[str] = []
         for cue in (
             "supply chain",
+            "供应链",
             "risk factors",
             "risk",
+            "风险",
             "competition",
+            "竞争",
             "raw material",
+            "原材料",
             "logistics",
+            "物流",
             "semiconductor",
+            "半导体",
             "geopolitical",
             "macro environment",
             "china market",
@@ -1067,6 +1089,17 @@ class GroundedAnswerComposer(AnswerService):
             scored.append((score, index, chunk))
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [chunk for _, _, chunk in scored[:limit]]
+
+    def _narrative_summary_line(self, plan: QueryPlan) -> str | None:
+        """Add a short deterministic cue line for Chinese narrative questions."""
+        if not self._prefers_chinese(plan):
+            return None
+        lower = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
+        if "supply chain" in lower or "供应链" in plan.original_query:
+            return "供应链相关披露："
+        if "risk" in lower or "风险" in plan.original_query:
+            return "风险因素相关披露："
+        return None
 
     def _narrative_excerpt(
         self,
@@ -1140,3 +1173,61 @@ class GroundedAnswerComposer(AnswerService):
             return f"{header} {reasons[0]}"
         bullet_lines = "\n".join(f"- {r}" for r in reasons)
         return f"{header}\n{bullet_lines}"
+
+    def _compose_time_series_text(
+        self,
+        plan: QueryPlan,
+        bundle: EvidenceBundle,
+    ) -> str:
+        """Compose a deterministic multi-period trend answer."""
+        concept = plan.required_concepts[0] if plan.required_concepts else None
+        if concept is None:
+            return self._insufficient_evidence_message(plan)
+
+        facts_by_period = {
+            fact.period_end: fact
+            for fact in bundle.facts
+            if fact.concept == concept and fact.period_end in set(plan.required_periods)
+        }
+        ordered_periods = [period for period in plan.required_periods if period in facts_by_period]
+        if not ordered_periods:
+            return self._insufficient_evidence_message(plan)
+
+        parts: list[str] = [self._sec_filings_intro(plan)]
+        values: list[float] = []
+        for period in ordered_periods:
+            fact = facts_by_period[period]
+            value = fact.value * fact.scale
+            values.append(value)
+            if self._prefers_chinese(plan):
+                parts.append(f"{period}: {fact.label} {value:,.2f} {fact.unit}")
+            else:
+                parts.append(f"{period}: {fact.label} {value:,.2f} {fact.unit}")
+
+        trend = self._trend_direction(values, prefer_chinese=self._prefers_chinese(plan))
+        if self._prefers_chinese(plan):
+            parts.append(f"趋势：{trend}")
+        else:
+            parts.append(f"Trend: {trend}")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _trend_direction(values: list[float], *, prefer_chinese: bool) -> str:
+        """Return a simple trend summary for ordered numeric values."""
+        if len(values) < 2:
+            return "整体平稳" if prefer_chinese else "stable"
+        increasing = all(b >= a for a, b in zip(values, values[1:], strict=False))
+        decreasing = all(b <= a for a, b in zip(values, values[1:], strict=False))
+        if increasing and values[-1] > values[0]:
+            return "整体上升" if prefer_chinese else "consistent upward trend"
+        if decreasing and values[-1] < values[0]:
+            return "整体下降" if prefer_chinese else "consistent downward trend"
+        if values[-1] > values[0]:
+            if prefer_chinese:
+                return "总体上升但中间有波动"
+            return "overall upward trend with fluctuations"
+        if values[-1] < values[0]:
+            if prefer_chinese:
+                return "总体下降但中间有波动"
+            return "overall downward trend with fluctuations"
+        return "整体平稳" if prefer_chinese else "stable"

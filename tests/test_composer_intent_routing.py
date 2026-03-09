@@ -16,6 +16,7 @@ from tesla_finrag.models import (
     QueryLanguage,
     QueryPlan,
     QueryType,
+    SectionChunk,
 )
 
 
@@ -232,3 +233,88 @@ def test_display_ratio_as_percent_uses_normalized_query() -> None:
         query_language=QueryLanguage.CHINESE,
     )
     assert GroundedAnswerComposer._display_ratio_as_percent(plan) is True
+
+
+def test_compose_time_series_text_lists_all_periods_and_trend() -> None:
+    composer = _composer()
+    periods = [
+        date(2021, 12, 31),
+        date(2022, 12, 31),
+        date(2023, 12, 31),
+        date(2024, 12, 31),
+    ]
+    plan = QueryPlan(
+        original_query="从FY2021到FY2024，特斯拉的研发费用如何变化？请概括趋势。",
+        normalized_query="research and development trend FY2021 FY2024",
+        query_language=QueryLanguage.CHINESE,
+        query_type=QueryType.NUMERIC_CALCULATION,
+        required_periods=periods,
+        required_concepts=["us-gaap:ResearchAndDevelopmentExpense"],
+        needs_calculation=True,
+        answer_shape=AnswerShape.TIME_SERIES,
+    )
+    bundle = EvidenceBundle(
+        plan_id=plan.plan_id,
+        facts=[
+            _fact("us-gaap:ResearchAndDevelopmentExpense", 2593, periods[0], "研发费用"),
+            _fact("us-gaap:ResearchAndDevelopmentExpense", 3075, periods[1], "研发费用"),
+            _fact("us-gaap:ResearchAndDevelopmentExpense", 3969, periods[2], "研发费用"),
+            _fact("us-gaap:ResearchAndDevelopmentExpense", 4540, periods[3], "研发费用"),
+        ],
+    )
+
+    text = composer._compose_text(plan, bundle, None, [])
+
+    assert "2021-12-31" in text
+    assert "2024-12-31" in text
+    assert "趋势：整体上升" in text
+
+
+def test_compose_composite_text_adds_chinese_supply_chain_header() -> None:
+    composer = _composer()
+    plan = QueryPlan(
+        original_query="2023年10-K中，特斯拉提到了哪些供应链风险？FY2022到FY2023汽车销售成本如何变化？",
+        normalized_query="supply chain risk factors cost of automotive revenue FY2022 FY2023",
+        query_language=QueryLanguage.CHINESE,
+        answer_shape=AnswerShape.COMPOSITE,
+    )
+    bundle = EvidenceBundle(plan_id=plan.plan_id)
+
+    text = composer._compose_composite_text(plan, bundle, None, [], ["missing numeric lane"])
+
+    assert "供应链相关披露：" in text
+
+
+def test_compose_text_adds_chinese_supply_chain_header_for_composite_success() -> None:
+    composer = _composer()
+    plan = QueryPlan(
+        original_query="2023年10-K中，特斯拉提到了哪些供应链风险？FY2022到FY2023汽车销售成本如何变化？",
+        normalized_query="supply chain risk factors cost of automotive revenue FY2022 FY2023",
+        query_language=QueryLanguage.CHINESE,
+        query_type=QueryType.HYBRID_REASONING,
+        answer_shape=AnswerShape.COMPOSITE,
+    )
+    bundle = EvidenceBundle(
+        plan_id=plan.plan_id,
+        section_chunks=[
+            SectionChunk(
+                doc_id=uuid4(),
+                section_title="Risk Factors",
+                text="Tesla discussed supply chain disruptions and logistics constraints.",
+                token_count=12,
+                page_number=11,
+            )
+        ],
+        facts=[
+            _fact(
+                "us-gaap:CostOfGoodsAndServicesSold",
+                65_000,
+                date(2023, 12, 31),
+                "汽车销售成本",
+            )
+        ],
+    )
+
+    text = composer._compose_text(plan, bundle, None, [])
+
+    assert "供应链相关披露：" in text

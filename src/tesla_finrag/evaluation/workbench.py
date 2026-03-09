@@ -19,6 +19,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from tesla_finrag.answer import GroundedAnswerComposer
+from tesla_finrag.i18n import response_language_directive
 from tesla_finrag.models import (
     AnswerPayload,
     AnswerShape,
@@ -27,6 +28,7 @@ from tesla_finrag.models import (
     FactRecord,
     FilingDocument,
     FilingType,
+    QueryLanguage,
     QueryPlan,
     SectionChunk,
     TableChunk,
@@ -448,12 +450,13 @@ class WorkbenchPipeline:
 
         # Now narrate the answer text using the remote chat model
         evidence_summary = self._build_evidence_summary(plan, bundle)
+        effective_response_language = response_language or self._default_response_language(plan)
         try:
             remote_text = provider.generate_grounded_answer(
                 question=plan.original_query,
                 evidence=evidence_summary,
                 calculation_trace=local_answer.calculation_trace or None,
-                response_language=response_language,
+                response_language=effective_response_language,
             )
         except ProviderError:
             logger.exception(
@@ -591,9 +594,19 @@ class WorkbenchPipeline:
             return False
 
         cues: list[str] = []
-        question_lower = plan.original_query.lower()
-        for cue in ("supply chain", "risk factors", "risk", "competition", "logistics"):
-            if cue in question_lower:
+        question_surface = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
+        for cue in (
+            "supply chain",
+            "供应链",
+            "risk factors",
+            "risk",
+            "风险",
+            "competition",
+            "竞争",
+            "logistics",
+            "物流",
+        ):
+            if cue in question_surface:
                 cues.append(cue)
 
         if not cues:
@@ -602,6 +615,13 @@ class WorkbenchPipeline:
         remote_lower = remote_text.lower()
         remote_has_cue = any(cue in remote_lower for cue in cues)
         return not remote_has_cue
+
+    @staticmethod
+    def _default_response_language(plan: QueryPlan) -> str | None:
+        """Choose a response-language directive that follows the query language."""
+        if plan.query_language in (QueryLanguage.CHINESE, QueryLanguage.MIXED):
+            return response_language_directive("zh_CN")
+        return None
 
     # ------------------------------------------------------------------
     # Scoped repositories

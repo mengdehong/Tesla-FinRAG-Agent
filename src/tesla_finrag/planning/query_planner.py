@@ -21,6 +21,7 @@ from tesla_finrag.models import (
     QueryLanguage,
     QueryPlan,
     QueryType,
+    SemanticScope,
     SubQuery,
 )
 from tesla_finrag.services import QueryPlanningService
@@ -63,6 +64,21 @@ _LATIN_CHAR_RE = re.compile(r"[A-Za-z]")
 _NUMERIC_DATE_RE = re.compile(
     r"(?:截至|截止|as\s+of\s+)?(?P<year>\d{4})\s*[年/-]\s*(?P<month>\d{1,2})\s*[月/-]\s*(?P<day>\d{1,2})\s*日?",
     re.IGNORECASE,
+)
+_CHINESE_YEAR_END_RE = re.compile(
+    r"(?:截至|截止|至)?\s*(?P<year>\d{4})\s*年\s*(?:年末|年底|末|底)"
+)
+_YEAR_RANGE_RE = re.compile(
+    r"""
+    (?:
+        (?:from\s+)?(?:FY|fiscal\s+year|full\s+year|annual)?\s*(?P<start_en>\d{4})
+        \s*(?:through|to|[-–])\s*
+        (?:FY|fiscal\s+year|full\s+year|annual)?\s*(?P<end_en>\d{4})
+    |
+        从\s*(?:FY)?(?P<start_cn>\d{4})\s*到\s*(?:FY)?(?P<end_cn>\d{4})
+    )
+    """,
+    re.VERBOSE | re.IGNORECASE,
 )
 _CHINESE_QUARTER_RE = re.compile(
     r"(?:(?P<year>\d{4})\s*年?\s*)?(?:[Qq](?P<q>[1-4])|第?(?P<cn>[一二三四1234])季度)"
@@ -130,6 +146,21 @@ def extract_periods(question: str) -> list[date]:
             periods.append(_fy_end(int(year_str)))
             occupied_spans.append(m.span())
 
+    for m in _YEAR_RANGE_RE.finditer(question):
+        start_year = m.group("start_en") or m.group("start_cn")
+        end_year = m.group("end_en") or m.group("end_cn")
+        if not start_year or not end_year:
+            continue
+        start = int(start_year)
+        end = int(end_year)
+        if start > end:
+            start, end = end, start
+        if end - start > 10:
+            continue
+        for year in range(start, end + 1):
+            periods.append(_fy_end(year))
+        occupied_spans.append(m.span())
+
     for m in _NUMERIC_DATE_RE.finditer(question):
         try:
             periods.append(
@@ -142,6 +173,10 @@ def extract_periods(question: str) -> list[date]:
             occupied_spans.append(m.span())
         except ValueError:
             continue
+
+    for m in _CHINESE_YEAR_END_RE.finditer(question):
+        periods.append(_fy_end(int(m.group("year"))))
+        occupied_spans.append(m.span())
 
     year_mentions = [
         (match.start(), int(match.group(1))) for match in re.finditer(r"(20[12]\d)", question)
@@ -380,7 +415,8 @@ _NORMALIZED_TERM_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"地缘政治"), "geopolitical"),
     (re.compile(r"中国市场"), "china market"),
     (re.compile(r"产能瓶颈"), "capacity bottleneck"),
-    (re.compile(r"比较|对比"), "compare"),
+    (re.compile(r"比较|对比|相比"), "compare"),
+    (re.compile(r"趋势|如何变化|变化趋势"), "trend change"),
     (re.compile(r"同比"), "year over year growth rate compare"),
     (re.compile(r"环比"), "quarter over quarter growth rate compare"),
     (re.compile(r"增长率"), "growth rate"),
@@ -708,7 +744,8 @@ def _build_sub_queries(
     concepts: list[str],
     period_sem_map: dict[str, PeriodSemantics],
     *,
-    query_language: QueryLanguage,
+    query_language: QueryLanguage = QueryLanguage.ENGLISH,
+    semantic_scope: SemanticScope | None = None,
 ) -> list[SubQuery]:
     """Build period-aware sub-queries for multi-period questions.
 
@@ -741,9 +778,18 @@ def _build_sub_queries(
                 target_period=period,
                 target_concepts=concepts,
                 period_semantics=sem,
+                semantic_scope=semantic_scope,
             )
         )
     return sub_queries
+
+
+def _detect_semantic_scope(question: str) -> SemanticScope | None:
+    """Infer business scope constraints such as automotive-only."""
+    lower = question.lower()
+    if "automotive" in lower or "汽车" in question:
+        return SemanticScope.AUTOMOTIVE
+    return None
 
 
 def _concept_to_human_label(concept: str, *, question: str | None = None) -> str:
@@ -752,8 +798,11 @@ def _concept_to_human_label(concept: str, *, question: str | None = None) -> str
     Uses the canonical alias list to find the best human-readable label.
     Falls back to splitting camelCase into space-separated words.
     """
-    question_lower = (question or "").lower()
-    if concept == "us-gaap:CostOfGoodsAndServicesSold" and "automotive" in question_lower:
+    question_text = question or ""
+    question_lower = question_text.lower()
+    if concept == "us-gaap:CostOfGoodsAndServicesSold" and (
+        "automotive" in question_lower or "汽车" in question_text
+    ):
         return "cost of automotive revenue"
 
     # Look up in _METRIC_ALIASES for the first (most common) alias
@@ -964,6 +1013,7 @@ def _infer_answer_shape(
     has_rank = bool(_RANKING_PATTERNS.search(rule_text))
     has_compare = bool(_COMPARISON_MULTI_PERIOD.search(rule_text))
     has_narrative = bool(_NARRATIVE_PATTERNS.search(rule_text))
+    has_trend = "trend" in rule_text or "变化" in question or "趋势" in question
     n_periods = len(periods)
     n_metrics = len(metrics)
 
@@ -971,6 +1021,9 @@ def _infer_answer_shape(
     # E.g. "What risk factors … and how did cost change …?"
     if has_narrative and n_metrics >= 1 and (has_compare or n_periods >= 2):
         return AnswerShape.COMPOSITE
+
+    if n_periods >= 3 and n_metrics >= 1 and has_trend:
+        return AnswerShape.TIME_SERIES
 
     # Ranking: explicit rank keywords OR ≥3 periods with a metric
     if has_rank and (n_periods >= 2 or n_metrics >= 2):
@@ -1176,6 +1229,7 @@ class RuleBasedQueryPlanner(QueryPlanningService):
         query_language = detect_query_language(question)
         periods = extract_periods(question)
         metrics = extract_metrics(question)
+        semantic_scope = _detect_semantic_scope(question)
         query_type = classify_query_type(question, metrics)
         keywords = extract_keywords(question, metrics, periods)
         normalized_query = _build_normalized_search_text(
@@ -1203,6 +1257,7 @@ class RuleBasedQueryPlanner(QueryPlanningService):
                 metrics,
                 period_sem_map,
                 query_language=query_language,
+                semantic_scope=semantic_scope,
             )
 
         # --- Phase B: Explicit intent inference ---
@@ -1278,6 +1333,7 @@ class RuleBasedQueryPlanner(QueryPlanningService):
             query_language=query_language,
             normalized_query=normalized_query,
             query_type=query_type,
+            semantic_scope=semantic_scope,
             sub_questions=[question],
             sub_queries=sub_queries,
             retrieval_keywords=keywords,

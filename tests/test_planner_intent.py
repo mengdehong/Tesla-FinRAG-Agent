@@ -15,6 +15,7 @@ from tesla_finrag.models import (
     CalculationIntent,
     CalculationOperand,
     QueryLanguage,
+    SemanticScope,
 )
 from tesla_finrag.planning.query_planner import (
     RuleBasedQueryPlanner,
@@ -570,6 +571,23 @@ class TestChinesePlannerSupport:
         periods = extract_periods("截至2023年12月31日，特斯拉的现金及现金等价物是多少？")
         assert periods == [date(2023, 12, 31)]
 
+    def test_extract_periods_expands_fiscal_year_range(self):
+        periods = extract_periods(
+            "How did Tesla's research and development expenses change from FY2021 through FY2024?"
+        )
+        assert periods == [
+            date(2021, 12, 31),
+            date(2022, 12, 31),
+            date(2023, 12, 31),
+            date(2024, 12, 31),
+        ]
+
+    def test_extract_periods_supports_chinese_year_end(self):
+        periods = extract_periods(
+            "截至2023年12月31日，特斯拉的现金及现金等价物是多少？相比2022年末如何变化？"
+        )
+        assert periods == [date(2022, 12, 31), date(2023, 12, 31)]
+
     def test_planner_normalizes_chinese_numeric_query(self):
         planner = RuleBasedQueryPlanner()
         plan = planner.plan("比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？")
@@ -601,6 +619,30 @@ class TestChinesePlannerSupport:
         assert "us-gaap:OperatingIncomeLoss" in plan.required_concepts
         assert "us-gaap:Revenues" in plan.required_concepts
         assert len([o for o in plan.calculation_operands if o.role == "numerator"]) == 3
+
+    def test_planner_marks_automotive_semantic_scope(self):
+        planner = RuleBasedQueryPlanner()
+        plan = planner.plan(
+            "What supply chain risk factors did Tesla mention in its 2023 10-K, "
+            "and how did cost of automotive revenue change between FY2022 and FY2023?"
+        )
+        assert plan.semantic_scope == SemanticScope.AUTOMOTIVE
+        assert all(
+            sub_query.semantic_scope == SemanticScope.AUTOMOTIVE
+            for sub_query in plan.sub_queries
+            if sub_query.target_concepts
+        )
+
+    def test_planner_expands_time_series_periods_and_shape(self):
+        planner = RuleBasedQueryPlanner()
+        plan = planner.plan("从FY2021到FY2024，特斯拉的研发费用如何变化？请概括趋势。")
+        assert plan.required_periods == [
+            date(2021, 12, 31),
+            date(2022, 12, 31),
+            date(2023, 12, 31),
+            date(2024, 12, 31),
+        ]
+        assert plan.answer_shape == AnswerShape.TIME_SERIES
 
     def test_bq008_simple_revenue_lookup(self):
         """BQ-008: simple revenue lookup → LOOKUP + SINGLE_VALUE."""

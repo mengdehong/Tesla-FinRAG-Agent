@@ -25,6 +25,7 @@ from tesla_finrag.models import (
     FactRecord,
     PeriodSemantics,
     SectionChunk,
+    SemanticScope,
     TableChunk,
 )
 from tesla_finrag.repositories import CorpusRepository, FactsRepository
@@ -125,6 +126,7 @@ class EvidenceLinker:
         required_periods: list[date] | None = None,
         period_semantics: dict[str, PeriodSemantics] | None = None,
         original_query: str | None = None,
+        semantic_scope: SemanticScope | None = None,
     ) -> EvidenceBundle:
         """Enrich an evidence bundle by linking across periods and metrics.
 
@@ -185,6 +187,7 @@ class EvidenceLinker:
                             tbl,
                             required_concepts,
                             original_query=original_query,
+                            semantic_scope=semantic_scope,
                         ):
                             continue
                         table_chunks.append(tbl)
@@ -208,6 +211,7 @@ class EvidenceLinker:
                         period,
                         table_chunks,
                         original_query=original_query,
+                        semantic_scope=semantic_scope,
                     )
                     if fallback is not None:
                         fallback_fact, fallback_detail = fallback
@@ -221,6 +225,7 @@ class EvidenceLinker:
             required_periods or [],
             required_concepts or [],
             facts,
+            semantic_scope=semantic_scope,
         )
         # Determine which periods lack required evidence.
         # For concept-scoped queries, a period is missing unless *all* required
@@ -270,6 +275,7 @@ class EvidenceLinker:
         table_chunks: list[TableChunk],
         *,
         original_query: str | None = None,
+        semantic_scope: SemanticScope | None = None,
     ) -> tuple[FactRecord, dict[str, object]] | None:
         """Attempt to extract a fact value from table chunks.
 
@@ -278,14 +284,29 @@ class EvidenceLinker:
         Returns a table-backed :class:`FactRecord` on success, or
         ``None`` if no match is found.
         """
-        aliases = self._get_table_aliases(concept, original_query=original_query)
+        aliases = self._get_table_aliases(
+            concept,
+            original_query=original_query,
+            semantic_scope=semantic_scope,
+        )
         if not aliases:
             return None
 
+        candidate_tables: list[TableChunk] = []
+        seen_chunk_ids: set[UUID] = set()
         for tbl in table_chunks:
-            tbl_period = self._filing_period_end(tbl.doc_id)
-            if tbl_period != period:
+            if tbl.chunk_id in seen_chunk_ids:
                 continue
+            candidate_tables.append(tbl)
+            seen_chunk_ids.add(tbl.chunk_id)
+        for filing in self._corpus.list_filings():
+            for tbl in self._corpus.get_table_chunks(filing.doc_id):
+                if tbl.chunk_id in seen_chunk_ids:
+                    continue
+                candidate_tables.append(tbl)
+                seen_chunk_ids.add(tbl.chunk_id)
+
+        for tbl in candidate_tables:
             match = self._extract_value_from_table(tbl, aliases, period=period)
             if match is None:
                 continue
@@ -317,12 +338,54 @@ class EvidenceLinker:
                     "raw_value": value,
                     "column_index": column_index,
                     "semantic_scope": (
-                        "automotive_only"
-                        if original_query and "automotive" in original_query.lower()
-                        else "general"
+                        semantic_scope.value if semantic_scope is not None else "general"
                     ),
                 }
                 return fact, detail
+
+        candidate_sections: list[SectionChunk] = []
+        seen_section_ids: set[UUID] = set()
+        for filing in self._corpus.list_filings():
+            for section in self._corpus.get_section_chunks(filing.doc_id):
+                if section.chunk_id in seen_section_ids:
+                    continue
+                candidate_sections.append(section)
+                seen_section_ids.add(section.chunk_id)
+
+        for section in candidate_sections:
+            match = self._extract_value_from_text_block(section.text, aliases, period=period)
+            if match is None:
+                continue
+            value, matched_alias, column_index = match
+            scale = self._infer_text_scale(section.text)
+            fact = FactRecord(
+                fact_id=uuid4(),
+                doc_id=section.doc_id,
+                concept=concept,
+                label=f"{matched_alias} (text-extracted)",
+                value=value,
+                unit="USD",
+                scale=scale,
+                period_start=date(period.year, 1, 1),
+                period_end=period,
+                is_instant=False,
+                source_chunk_id=section.chunk_id,
+            )
+            detail = {
+                "concept": concept,
+                "requested_period": period.isoformat(),
+                "matched_alias": matched_alias,
+                "source_chunk_id": str(section.chunk_id),
+                "source_doc_id": str(section.doc_id),
+                "source_kind": "section_text",
+                "scale": scale,
+                "raw_value": value,
+                "column_index": column_index,
+                "semantic_scope": (
+                    semantic_scope.value if semantic_scope is not None else "general"
+                ),
+            }
+            return fact, detail
         return None
 
     @staticmethod
@@ -330,6 +393,7 @@ class EvidenceLinker:
         concept: str,
         *,
         original_query: str | None = None,
+        semantic_scope: SemanticScope | None = None,
     ) -> list[str]:
         """Get human-readable aliases for table matching.
 
@@ -340,10 +404,17 @@ class EvidenceLinker:
             aliases = list(_CONCEPT_TABLE_ALIASES[concept])
             if (
                 concept == "us-gaap:CostOfGoodsAndServicesSold"
-                and original_query
-                and "automotive" in original_query.lower()
+                and (
+                    semantic_scope == SemanticScope.AUTOMOTIVE
+                    or (
+                        original_query
+                        and (
+                            "automotive" in original_query.lower() or "汽车" in original_query
+                        )
+                    )
+                )
             ):
-                automotive_aliases = [a for a in aliases if "automotive" in a]
+                automotive_aliases = [a for a in aliases if "automotive" in a or "汽车" in a]
                 return automotive_aliases or aliases
             return aliases
 
@@ -430,6 +501,54 @@ class EvidenceLinker:
         return value
 
     @staticmethod
+    def _extract_value_from_text_block(
+        text: str,
+        aliases: list[str],
+        *,
+        period: date | None = None,
+    ) -> tuple[float, str, int | None] | None:
+        """Extract a period-scoped numeric value from a text chunk containing table text."""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        target_column = EvidenceLinker._text_column_index_for_period(lines, period)
+        for line in lines:
+            lowered = line.lower()
+            matched_alias = next((alias for alias in aliases if alias.lower() in lowered), None)
+            if matched_alias is None:
+                continue
+            tokens = _TABLE_VALUE_RE.findall(line)
+            numbers = [EvidenceLinker._parse_table_cell_value(token) for token in tokens]
+            parsed_numbers = [value for value in numbers if value is not None]
+            if target_column is not None and target_column < len(parsed_numbers):
+                return parsed_numbers[target_column], matched_alias, target_column
+            if len(parsed_numbers) == 1:
+                return parsed_numbers[0], matched_alias, 0
+        return None
+
+    @staticmethod
+    def _text_column_index_for_period(lines: list[str], period: date | None) -> int | None:
+        """Infer the numeric column index for a period from plain-text table lines."""
+        if period is None:
+            return None
+        target_year = str(period.year)
+        for line in lines[:12]:
+            years = re.findall(r"20\d{2}", line)
+            if target_year in years:
+                return years.index(target_year)
+        return None
+
+    @staticmethod
+    def _infer_text_scale(text: str) -> int:
+        """Infer numeric scale from a text block that contains table content."""
+        lowered = text.lower()
+        if "in millions" in lowered:
+            return 1_000_000
+        if "in thousands" in lowered:
+            return 1_000
+        if "in billions" in lowered:
+            return 1_000_000_000
+        return 1
+
+    @staticmethod
     def _column_index_for_period(
         table: TableChunk,
         row: list[str],
@@ -481,6 +600,7 @@ class EvidenceLinker:
         concepts: list[str],
         *,
         original_query: str | None = None,
+        semantic_scope: SemanticScope | None = None,
     ) -> bool:
         """Check if a table chunk's text mentions any of the concepts."""
         searchable = f"{table.caption} {table.raw_text} {' '.join(table.headers)}".lower()
@@ -489,6 +609,7 @@ class EvidenceLinker:
             aliases = EvidenceLinker._get_table_aliases(
                 concept,
                 original_query=original_query,
+                semantic_scope=semantic_scope,
             )
             for alias in aliases:
                 if alias.lower() in searchable:
@@ -522,6 +643,8 @@ class EvidenceLinker:
         required_periods: list[date],
         required_concepts: list[str],
         facts: list[FactRecord],
+        *,
+        semantic_scope: SemanticScope | None = None,
     ) -> dict[str, dict]:
         """Compute per-period evidence coverage for debug metadata.
 
@@ -531,20 +654,43 @@ class EvidenceLinker:
         coverage: dict[str, dict] = {}
         for period in required_periods:
             period_facts = [f for f in facts if f.period_end == period]
-            matched_concepts = (
-                sorted({f.concept for f in period_facts if f.concept in required_concepts})
-                if required_concepts
-                else sorted({f.concept for f in period_facts})
-            )
-            missing_concepts = (
-                sorted(set(required_concepts) - set(matched_concepts)) if required_concepts else []
-            )
+            if required_concepts:
+                matched_concepts = [
+                    concept
+                    for concept in required_concepts
+                    if EvidenceLinker._period_has_concept(
+                        period_facts,
+                        concept,
+                        semantic_scope=semantic_scope,
+                    )
+                ]
+                missing_concepts = sorted(set(required_concepts) - set(matched_concepts))
+            else:
+                matched_concepts = sorted({f.concept for f in period_facts})
+                missing_concepts = []
             coverage[period.isoformat()] = {
                 "has_facts": len(period_facts) > 0,
                 "fact_count": len(period_facts),
                 "concept_count": len(matched_concepts),
-                "matched_concepts": matched_concepts,
+                "matched_concepts": sorted(matched_concepts),
                 "missing_concepts": missing_concepts,
                 "has_required_concepts": len(missing_concepts) == 0,
             }
         return coverage
+
+    @staticmethod
+    def _period_has_concept(
+        period_facts: list[FactRecord],
+        required_concept: str,
+        *,
+        semantic_scope: SemanticScope | None = None,
+    ) -> bool:
+        """Return whether a period has a concept under the current semantic scope."""
+        available = {fact.concept for fact in period_facts}
+        if required_concept in available:
+            return True
+        if semantic_scope == SemanticScope.AUTOMOTIVE:
+            return False
+        if required_concept == "us-gaap:CostOfGoodsAndServicesSold":
+            return "us-gaap:CostOfRevenue" in available
+        return False

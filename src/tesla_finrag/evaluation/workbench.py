@@ -18,7 +18,12 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from tesla_finrag.answer import GroundedAnswerComposer
+from tesla_finrag.agent import FinancialQaAgent
+from tesla_finrag.concepts import (
+    SemanticConceptResolver,
+    build_companyfacts_catalog,
+    default_companyfacts_path,
+)
 from tesla_finrag.i18n import response_language_directive
 from tesla_finrag.models import (
     AnswerPayload,
@@ -33,13 +38,13 @@ from tesla_finrag.models import (
     SectionChunk,
     TableChunk,
 )
-from tesla_finrag.planning import RuleBasedQueryPlanner
+from tesla_finrag.planning import FastPathPlanner, LLMQueryPlanner, RuleBasedQueryPlanner
 from tesla_finrag.repositories import RetrievalStore
 from tesla_finrag.retrieval import (
-    HybridRetrievalService,
     InMemoryCorpusRepository,
     InMemoryFactsRepository,
 )
+from tesla_finrag.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -342,11 +347,35 @@ class WorkbenchPipeline:
     ) -> None:
         self._corpus_repo = corpus_repo
         self._facts_repo = facts_repo
-        self._planner = RuleBasedQueryPlanner()
         self._provider_mode = provider_mode
         self._provider = provider  # OpenAIProvider instance when remote
         self._retrieval_store = retrieval_store
         self._indexing_provider = indexing_provider
+        settings = get_settings()
+        self._concept_resolver = SemanticConceptResolver(
+            build_companyfacts_catalog(default_companyfacts_path()),
+            embedding_backend=indexing_provider,
+            top_k=settings.concept_search_top_k,
+            semantic_accept_score=settings.concept_semantic_accept_score,
+            semantic_accept_gap=settings.concept_semantic_accept_gap,
+            calibrated=settings.concept_resolution_calibrated,
+            calibration_version=(
+                f"{getattr(indexing_provider, 'info', None).embedding_model}"
+                if indexing_provider is not None and hasattr(indexing_provider, "info")
+                else "uncalibrated"
+            ),
+        )
+        self._rule_planner = RuleBasedQueryPlanner()
+        self._llm_planner = LLMQueryPlanner(
+            provider=provider,
+            concept_resolver=self._concept_resolver,
+            fallback=self._rule_planner,
+            settings=settings,
+        )
+        self._planner = FastPathPlanner(
+            rule_planner=self._rule_planner,
+            llm_planner=self._llm_planner,
+        )
 
     @property
     def provider_mode(self) -> ProviderMode:
@@ -370,26 +399,43 @@ class WorkbenchPipeline:
         _, _, answer = self.run(question, scope=scope)
         return answer
 
+    def run_stream(
+        self,
+        question: str,
+        scope: FilingScope | None = None,
+        response_language: str | None = None,
+    ):
+        corpus_repo, facts_repo = self._scoped_repositories(scope)
+        from tesla_finrag.provider import ProviderError
+
+        if self._provider is None:
+            if self._provider_mode == ProviderMode.LOCAL:
+                raise ProviderError(
+                    "local Ollama provider mode selected but no provider was configured. "
+                    "Ensure Ollama is available or inject a provider."
+                )
+            raise ProviderError(
+                "openai-compatible provider mode selected but no provider was configured. "
+                "Set OPENAI_API_KEY in the environment."
+            )
+
+        agent = FinancialQaAgent(
+            planner=self._planner,
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            retrieval_store=self._retrieval_store,
+            indexing_provider=self._indexing_provider,
+            provider=self._provider,
+        )
+        yield from agent.run_stream(question)
+
     def run(
         self,
         question: str,
         scope: FilingScope | None = None,
         response_language: str | None = None,
     ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
-        plan = self._planner.plan(question)
         corpus_repo, facts_repo = self._scoped_repositories(scope)
-        return self._run_provider_backed(
-            plan, corpus_repo, facts_repo, scope, response_language=response_language
-        )
-
-    def _run_provider_backed(
-        self,
-        plan: QueryPlan,
-        corpus_repo: InMemoryCorpusRepository,
-        facts_repo: InMemoryFactsRepository,
-        scope: FilingScope | None,
-        response_language: str | None = None,
-    ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
         from tesla_finrag.provider import ProviderError
 
         if self._provider is None:
@@ -406,34 +452,15 @@ class WorkbenchPipeline:
         provider = self._provider
         provider_info = provider.info
         indexing_provider = self._indexing_provider
-
-        if self._retrieval_store is not None:
-            retrieval_store = self._retrieval_store
-            if indexing_provider is None:
-                raise ProviderError(
-                    "A shared indexing provider is required when a persisted retrieval store "
-                    "is configured."
-                )
-        else:
-            retrieval_store = None
-
-        def embed_fn(text: str) -> list[float]:
-            if indexing_provider is None:
-                return []
-            vectors = indexing_provider.embed_texts([text])
-            return vectors[0] if vectors else []
-
-        retrieval = HybridRetrievalService(
+        agent = FinancialQaAgent(
+            planner=self._planner,
             corpus_repo=corpus_repo,
             facts_repo=facts_repo,
-            retrieval_store=retrieval_store,
-            embed_fn=(embed_fn if retrieval_store is not None else None),
+            retrieval_store=self._retrieval_store,
+            indexing_provider=indexing_provider,
+            provider=provider,
         )
-        composer = GroundedAnswerComposer(corpus_repo=corpus_repo, facts_repo=facts_repo)
-
-        bundle = retrieval.retrieve(plan)
-
-        local_answer = composer.answer(plan, bundle)
+        plan, bundle, local_answer = agent.run(question)
 
         if local_answer.status != AnswerStatus.OK:
             local_answer.retrieval_debug.update(
@@ -465,10 +492,10 @@ class WorkbenchPipeline:
             )
             raise
 
-        composite_local_fallback_used = False
-        if self._should_use_local_composite_answer(plan, bundle, remote_text, local_answer):
+        local_answer_fallback_used = False
+        if self._should_use_local_answer(plan, bundle, remote_text, local_answer):
             remote_text = local_answer.answer_text
-            composite_local_fallback_used = True
+            local_answer_fallback_used = True
 
         answer = AnswerPayload(
             plan_id=local_answer.plan_id,
@@ -479,8 +506,8 @@ class WorkbenchPipeline:
             retrieval_debug=local_answer.retrieval_debug,
             confidence=local_answer.confidence,
         )
-        if composite_local_fallback_used:
-            answer.retrieval_debug["composite_local_fallback_used"] = True
+        if local_answer_fallback_used:
+            answer.retrieval_debug["local_answer_fallback_used"] = True
         answer.retrieval_debug.update(
             self._build_retrieval_debug(
                 provider_info=provider_info,
@@ -581,40 +608,101 @@ class WorkbenchPipeline:
         return "\n".join(parts) if parts else "No evidence found."
 
     @staticmethod
-    def _should_use_local_composite_answer(
+    def _should_use_local_answer(
         plan: QueryPlan,
         bundle: EvidenceBundle,
         remote_text: str,
         local_answer: AnswerPayload,
     ) -> bool:
-        """Fallback to the local composite answer when remote text drops the narrative lane."""
-        if plan.answer_shape != AnswerShape.COMPOSITE:
-            return False
-        if not bundle.section_chunks:
+        """Fallback to the local answer when remote narration drops critical cues."""
+        if not local_answer.answer_text.strip():
             return False
 
-        cues: list[str] = []
-        question_surface = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
-        for cue in (
-            "supply chain",
-            "供应链",
-            "risk factors",
-            "risk",
-            "风险",
-            "competition",
-            "竞争",
-            "logistics",
-            "物流",
-        ):
-            if cue in question_surface:
-                cues.append(cue)
-
-        if not cues:
+        cues = WorkbenchPipeline._answer_preservation_cues(plan)
+        if not cues and plan.answer_shape != AnswerShape.COMPOSITE:
             return False
 
         remote_lower = remote_text.lower()
-        remote_has_cue = any(cue in remote_lower for cue in cues)
-        return not remote_has_cue
+        local_lower = local_answer.answer_text.lower()
+
+        if plan.query_language in (QueryLanguage.CHINESE, QueryLanguage.MIXED):
+            remote_has_cjk = WorkbenchPipeline._contains_cjk(remote_text)
+            local_has_cjk = WorkbenchPipeline._contains_cjk(local_answer.answer_text)
+            if local_has_cjk and not remote_has_cjk:
+                return True
+
+        remote_score = sum(1 for cue in cues if cue in remote_lower)
+        local_score = sum(1 for cue in cues if cue in local_lower)
+        if local_score > remote_score:
+            return True
+
+        if plan.answer_shape == AnswerShape.COMPOSITE and bundle.section_chunks:
+            narrative_cues = [
+                cue
+                for cue in cues
+                if cue in {
+                    "supply chain",
+                    "供应链",
+                    "risk factors",
+                    "risk",
+                    "风险",
+                    "competition",
+                    "竞争",
+                    "logistics",
+                    "物流",
+                    "geopolitical",
+                    "地缘政治",
+                }
+            ]
+            if narrative_cues and not any(cue in remote_lower for cue in narrative_cues):
+                return True
+
+        return False
+
+    @staticmethod
+    def _contains_cjk(text: str) -> bool:
+        return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+    @staticmethod
+    def _answer_preservation_cues(plan: QueryPlan) -> list[str]:
+        question_surface = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
+        cues: list[str] = []
+        for cue in (
+            "gross profit",
+            "margin",
+            "毛利润",
+            "毛利率",
+            "revenue",
+            "总营收",
+            "operating income",
+            "quarter",
+            "营业利润",
+            "季度",
+            "free cash flow",
+            "capital expenditure",
+            "自由现金流",
+            "资本支出",
+            "cash and cash equivalents",
+            "现金及现金等价物",
+            "supply chain",
+            "供应链",
+            "cost",
+            "成本",
+            "research and development",
+            "研发",
+            "trend",
+            "趋势",
+            "geopolitical",
+            "地缘政治",
+            "accounts payable",
+        ):
+            if cue in question_surface and cue not in cues:
+                cues.append(cue)
+        if plan.query_language in (QueryLanguage.CHINESE, QueryLanguage.MIXED):
+            cues.append("结果")
+        else:
+            cues.append("result")
+        return cues
 
     @staticmethod
     def _default_response_language(plan: QueryPlan) -> str | None:

@@ -303,6 +303,31 @@ _METRIC_ALIASES: dict[str, list[str]] = {
         "现金及现金等价物",
         "现金头寸",
     ],
+    "us-gaap:AccountsPayableCurrent": [
+        "accounts payable current",
+        "accounts payable, current",
+        "current accounts payable",
+        "ap current",
+        "accounts payable",
+        "应付账款",
+        "流动应付账款",
+    ],
+    "us-gaap:AccountsReceivableNetCurrent": [
+        "accounts receivable current",
+        "accounts receivable, current",
+        "current accounts receivable",
+        "ar current",
+        "accounts receivable",
+        "应收账款",
+        "流动应收账款",
+    ],
+    "dei:EntityPublicFloat": [
+        "public float",
+        "entity public float",
+        "company public float",
+        "公众持股市值",
+        "流通市值",
+    ],
     "us-gaap:LongTermDebt": [
         "long-term debt",
         "long term debt",
@@ -1012,12 +1037,13 @@ def _infer_answer_shape(
     has_compare = bool(_COMPARISON_MULTI_PERIOD.search(rule_text))
     has_narrative = bool(_NARRATIVE_PATTERNS.search(rule_text))
     has_trend = "trend" in rule_text or "变化" in question or "趋势" in question
+    has_split = bool(_COMPOSITE_SPLIT_RE.search(question))
     n_periods = len(periods)
     n_metrics = len(metrics)
 
     # Composite: narrative + numeric/comparison signals together.
     # E.g. "What risk factors … and how did cost change …?"
-    if has_narrative and n_metrics >= 1 and (has_compare or n_periods >= 2):
+    if has_narrative and n_metrics >= 1 and (has_compare or n_periods >= 2 or has_split):
         return AnswerShape.COMPOSITE
 
     if n_periods >= 3 and n_metrics >= 1 and has_trend:
@@ -1196,14 +1222,18 @@ def _build_composite_narrative_sub_query(
         if target_period is not None
         else PeriodSemantics.UNKNOWN
     )
+    search_text = _build_normalized_search_text(
+        narrative_text,
+        [],
+        [target_period] if target_period is not None else [],
+        query_language=query_language,
+    )
+    weighted_terms = _extract_normalized_terms(question)
+    if weighted_terms:
+        search_text = " ".join([search_text, *weighted_terms]).strip()
     return SubQuery(
         text=narrative_text,
-        search_text=_build_normalized_search_text(
-            narrative_text,
-            [],
-            [target_period] if target_period is not None else [],
-            query_language=query_language,
-        ),
+        search_text=search_text,
         target_period=target_period,
         target_concepts=[],
         period_semantics=semantics,

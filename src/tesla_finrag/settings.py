@@ -59,6 +59,18 @@ class AppSettings(BaseSettings):
         le=300,
         description="Request timeout in seconds for OpenAI API calls.",
     )
+    provider_timeout_retry_attempts: int = Field(
+        1,
+        ge=0,
+        le=5,
+        description="Additional retry attempts for provider requests that fail due to timeout.",
+    )
+    provider_timeout_retry_seconds: int = Field(
+        120,
+        ge=1,
+        le=600,
+        description="Per-request timeout used for a retry attempt after an initial timeout.",
+    )
     ollama_base_url: str = Field(
         "http://localhost:11434/v1",
         description="Base URL for the local Ollama OpenAI-compatible endpoint.",
@@ -115,6 +127,57 @@ class AppSettings(BaseSettings):
         ge=1,
         le=50,
         description="Final number of chunks passed to the answer model after reranking.",
+    )
+    planner_mode: str = Field(
+        "llm_fallback",
+        description="Planner mode: llm_fallback, llm, shadow, or rule.",
+    )
+    planner_min_confidence: float = Field(
+        0.65,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence required to accept a structured LLM plan.",
+    )
+    concept_search_top_k: int = Field(
+        5,
+        ge=1,
+        le=20,
+        description="Maximum semantic concept candidates to keep per metric mention.",
+    )
+    concept_semantic_accept_score: float = Field(
+        0.78,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Model-calibrated default semantic acceptance score. Recalibrate when the "
+            "embedding backend changes."
+        ),
+    )
+    concept_semantic_accept_gap: float = Field(
+        0.05,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Model-calibrated default gap between top-1 and top-2 semantic candidates. "
+            "Recalibrate when the embedding backend changes."
+        ),
+    )
+    concept_resolution_calibrated: bool = Field(
+        False,
+        description=(
+            "When False, semantic concept matches are treated conservatively and require "
+            "follow-up confirmation instead of hard acceptance."
+        ),
+    )
+    agent_max_iterations: int = Field(
+        3,
+        ge=1,
+        le=10,
+        description="Maximum iterations for the Financial QA agent repair loop.",
+    )
+    enable_llm_table_extraction: bool = Field(
+        True,
+        description="Allow the agent to ask the LLM to extract numeric values from tables.",
     )
 
     # ── Logging ───────────────────────────────────────────────────────────────

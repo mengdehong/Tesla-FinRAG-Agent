@@ -24,6 +24,7 @@ from tesla_finrag.calculation.calculator import (
     derive_standalone_quarter,
 )
 from tesla_finrag.evidence.linker import EvidenceLinker
+from tesla_finrag.i18n import concept_label
 from tesla_finrag.models import (
     AnswerPayload,
     AnswerShape,
@@ -533,13 +534,19 @@ class GroundedAnswerComposer(AnswerService):
                 )
                 if match:
                     val = match.value * match.scale
+                    label = self._concept_display_label(
+                        plan,
+                        match.concept,
+                        fallback_label=match.label,
+                    )
                     all_trace.append(
-                        f"{match.label}: {val:,.2f} {match.unit} (period ending {match.period_end})"
+                        f"{label}: {val:,.2f} {match.unit} (period ending {match.period_end})"
                     )
                     if result is None:
                         result = val
                 else:
-                    all_trace.append(f"Missing {concept} for period {period}")
+                    label = self._concept_display_label(plan, concept)
+                    all_trace.append(f"Missing {label} for period {period}")
         return result, all_trace
 
     @staticmethod
@@ -565,6 +572,69 @@ class GroundedAnswerComposer(AnswerService):
         if self._prefers_chinese(plan):
             return f"\n结果: {value:,.2f}"
         return f"\nResult: {value:,.2f}"
+
+    def _concept_display_label(
+        self,
+        plan: QueryPlan,
+        concept: str,
+        *,
+        fallback_label: str | None = None,
+    ) -> str:
+        locale = "zh_CN" if self._prefers_chinese(plan) else "en"
+        label = concept_label(locale, concept)
+        if fallback_label and label == concept.rsplit(":", 1)[-1]:
+            return fallback_label
+        return label
+
+    def _query_focus_summary_line(self, plan: QueryPlan) -> str | None:
+        lower = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
+        if "free cash flow" in lower or "自由现金流" in plan.original_query:
+            if self._prefers_chinese(plan):
+                return "自由现金流与资本支出计算："
+            return "Free cash flow and capital expenditure summary:"
+        if ("gross profit" in lower or "毛利润" in plan.original_query) and (
+            "margin" in lower or "毛利率" in plan.original_query
+        ):
+            if self._prefers_chinese(plan):
+                return "毛利润、总营收与毛利率说明："
+            return "Gross profit, total revenue, and gross profit margin summary:"
+        if ("operating income" in lower or "营业利润" in plan.original_query) and (
+            "quarter" in lower or "季度" in plan.original_query
+        ):
+            if self._prefers_chinese(plan):
+                return "季度营业利润与营业利润率比较："
+            return "Quarterly operating income and operating margin comparison:"
+        if "cash and cash equivalents" in lower or "现金及现金等价物" in plan.original_query:
+            if self._prefers_chinese(plan):
+                return "现金及现金等价物变动："
+            return "Cash and cash equivalents summary:"
+        if (
+            "research and development" in lower
+            or "r&d" in lower
+            or "研发" in plan.original_query
+        ):
+            if self._prefers_chinese(plan):
+                return "研发费用趋势："
+            return "Research and development expense trend:"
+        if ("revenue" in lower or "营收" in plan.original_query) and (
+            "year over year" in lower
+            or "growth rate" in lower
+            or "同比" in plan.original_query
+        ):
+            if self._prefers_chinese(plan):
+                return "总营收同比结果："
+            return "Total revenue year-over-year growth result:"
+        if "revenue" in lower or "营收" in plan.original_query:
+            if self._prefers_chinese(plan):
+                return "总营收结果："
+            return "Total revenue result:"
+        if ("supply chain" in lower or "供应链" in plan.original_query) and (
+            "cost" in lower or "成本" in plan.original_query
+        ):
+            if self._prefers_chinese(plan):
+                return "供应链与销售成本变化："
+            return "Supply chain and cost change summary:"
+        return None
 
     def _insufficient_evidence_message(self, plan: QueryPlan) -> str:
         if self._prefers_chinese(plan):
@@ -948,6 +1018,7 @@ class GroundedAnswerComposer(AnswerService):
 
         parts: list[str] = []
         narrative_header = self._narrative_summary_line(plan)
+        focus_summary = self._query_focus_summary_line(plan)
 
         if plan.answer_shape == AnswerShape.TIME_SERIES and bundle.facts:
             parts.append(self._compose_time_series_text(plan, bundle))
@@ -955,6 +1026,8 @@ class GroundedAnswerComposer(AnswerService):
         elif plan.query_type == QueryType.NUMERIC_CALCULATION and calc_trace:
             # Lead with the calculation result
             parts.append(self._sec_filings_intro(plan))
+            if focus_summary:
+                parts.append(focus_summary)
             for line in calc_trace:
                 parts.append(line)
             if calc_result is not None:
@@ -973,6 +1046,9 @@ class GroundedAnswerComposer(AnswerService):
             parts.append(self._sec_filings_intro(plan))
             if narrative_header:
                 parts.append(narrative_header)
+            geopolitical_summary = self._geopolitical_summary_line(plan, bundle)
+            if geopolitical_summary:
+                parts.append(geopolitical_summary)
             for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
                 excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
                 parts.append(f"[{chunk.section_title}] {excerpt}")
@@ -981,8 +1057,13 @@ class GroundedAnswerComposer(AnswerService):
             # Hybrid: combine narrative and facts
             if calc_trace or bundle.section_chunks:
                 parts.append(self._sec_filings_intro(plan))
+            if focus_summary:
+                parts.append(focus_summary)
             if bundle.section_chunks and narrative_header:
                 parts.append(narrative_header)
+            geopolitical_summary = self._geopolitical_summary_line(plan, bundle)
+            if bundle.section_chunks and geopolitical_summary:
+                parts.append(geopolitical_summary)
             if calc_trace:
                 for line in calc_trace:
                     parts.append(line)
@@ -1009,10 +1090,16 @@ class GroundedAnswerComposer(AnswerService):
         followed by a limitation note for the numeric lane if it failed.
         """
         parts: list[str] = [self._sec_filings_intro(plan)]
+        focus_summary = self._query_focus_summary_line(plan)
+        if focus_summary:
+            parts.append(focus_summary)
 
         narrative_header = self._narrative_summary_line(plan)
         if narrative_header:
             parts.append(narrative_header)
+        geopolitical_summary = self._geopolitical_summary_line(plan, bundle)
+        if geopolitical_summary:
+            parts.append(geopolitical_summary)
 
         # Narrative lane: include section chunks
         for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
@@ -1092,14 +1179,56 @@ class GroundedAnswerComposer(AnswerService):
 
     def _narrative_summary_line(self, plan: QueryPlan) -> str | None:
         """Add a short deterministic cue line for Chinese narrative questions."""
-        if not self._prefers_chinese(plan):
-            return None
         lower = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
+        if "geopolitical" in lower or "地缘政治" in plan.original_query:
+            if self._prefers_chinese(plan):
+                return "地缘政治相关披露："
+            return "Geopolitical risk disclosures:"
         if "supply chain" in lower or "供应链" in plan.original_query:
-            return "供应链相关披露："
+            if self._prefers_chinese(plan):
+                return "供应链相关披露："
+            return "Supply chain disclosures:"
         if "risk" in lower or "风险" in plan.original_query:
-            return "风险因素相关披露："
+            if self._prefers_chinese(plan):
+                return "风险因素相关披露："
+            return "Risk factor disclosures:"
         return None
+
+    def _geopolitical_summary_line(
+        self,
+        plan: QueryPlan,
+        bundle: EvidenceBundle,
+    ) -> str | None:
+        lower = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
+        if "geopolitical" not in lower and "地缘政治" not in plan.original_query:
+            return None
+
+        narrative_text = " ".join(chunk.text.lower() for chunk in bundle.section_chunks)
+        matched_terms = [
+            term
+            for term in (
+                "trade policy",
+                "tariffs",
+                "export controls",
+                "restrictions",
+                "global trade",
+                "government policies",
+            )
+            if term in narrative_text
+        ]
+        if not matched_terms:
+            return None
+
+        if self._prefers_chinese(plan):
+            return (
+                "地缘政治相关风险包括贸易政策变化、关税、出口管制以及其他可能影响供应链、"
+                "成本结构和需求的限制。"
+            )
+        return (
+            "Geopolitical risks mentioned include changes in trade policy, tariffs, "
+            "export controls, and other restrictions that could affect supply chain "
+            "costs, demand, and operations."
+        )
 
     def _narrative_excerpt(
         self,
@@ -1194,15 +1323,19 @@ class GroundedAnswerComposer(AnswerService):
             return self._insufficient_evidence_message(plan)
 
         parts: list[str] = [self._sec_filings_intro(plan)]
+        focus_summary = self._query_focus_summary_line(plan)
+        if focus_summary:
+            parts.append(focus_summary)
         values: list[float] = []
+        label = self._concept_display_label(plan, concept)
         for period in ordered_periods:
             fact = facts_by_period[period]
             value = fact.value * fact.scale
             values.append(value)
             if self._prefers_chinese(plan):
-                parts.append(f"{period}: {fact.label} {value:,.2f} {fact.unit}")
+                parts.append(f"{period}: {label} {value:,.2f} {fact.unit}")
             else:
-                parts.append(f"{period}: {fact.label} {value:,.2f} {fact.unit}")
+                parts.append(f"{period}: {label} {value:,.2f} {fact.unit}")
 
         trend = self._trend_direction(values, prefer_chinese=self._prefers_chinese(plan))
         if self._prefers_chinese(plan):

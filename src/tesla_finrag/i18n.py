@@ -297,6 +297,10 @@ _TRANSLATIONS: Final[dict[str, dict[str, str]]] = {
         "en": "Operating Income",
         "zh_CN": "营业利润",
     },
+    "concept:us-gaap:CashAndCashEquivalentsAtCarryingValue": {
+        "en": "Cash and Cash Equivalents",
+        "zh_CN": "现金及现金等价物",
+    },
     "concept:custom:FreeCashFlow": {
         "en": "Free Cash Flow",
         "zh_CN": "自由现金流",
@@ -312,6 +316,10 @@ _TRANSLATIONS: Final[dict[str, dict[str, str]]] = {
     "concept:custom:CapitalExpenditure": {
         "en": "Capital Expenditure",
         "zh_CN": "资本支出",
+    },
+    "concept:us-gaap:ResearchAndDevelopmentExpense": {
+        "en": "Research and Development Expense",
+        "zh_CN": "研发费用",
     },
 }
 

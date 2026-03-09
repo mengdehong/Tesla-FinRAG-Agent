@@ -61,6 +61,8 @@ class TestSettingsProviderFields:
         s = AppSettings(_env_file=None)  # type: ignore[call-arg]
         assert s.openai_base_url is None
         assert s.openai_timeout_seconds == 60
+        assert s.provider_timeout_retry_attempts == 1
+        assert s.provider_timeout_retry_seconds == 120
         assert s.ollama_base_url == "http://localhost:11434/v1"
         assert s.ollama_timeout_seconds == 60
         assert s.ollama_chat_model == "qwen2.5:1.5b"
@@ -69,6 +71,8 @@ class TestSettingsProviderFields:
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENAI_BASE_URL", "https://my-proxy.example.com/v1")
         monkeypatch.setenv("OPENAI_TIMEOUT_SECONDS", "45")
+        monkeypatch.setenv("PROVIDER_TIMEOUT_RETRY_ATTEMPTS", "2")
+        monkeypatch.setenv("PROVIDER_TIMEOUT_RETRY_SECONDS", "180")
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
         monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "90")
         monkeypatch.setenv("OLLAMA_CHAT_MODEL", "qwen2.5:14b")
@@ -76,6 +80,8 @@ class TestSettingsProviderFields:
         s = AppSettings(_env_file=None)  # type: ignore[call-arg]
         assert s.openai_base_url == "https://my-proxy.example.com/v1"
         assert s.openai_timeout_seconds == 45
+        assert s.provider_timeout_retry_attempts == 2
+        assert s.provider_timeout_retry_seconds == 180
         assert s.ollama_base_url == "http://ollama.local:11434/v1"
         assert s.ollama_timeout_seconds == 90
         assert s.ollama_chat_model == "qwen2.5:14b"
@@ -246,6 +252,34 @@ class TestProviderRequests:
         assert "Step 1: Profit / Revenue" in user_content
         assert "Step 2: = 18.2%" in user_content
 
+    @pytest.mark.parametrize("provider_factory", [_make_openai_provider, _make_ollama_provider])
+    def test_generate_grounded_answer_retries_once_on_timeout(
+        self,
+        provider_factory: Any,
+    ) -> None:
+        mock_client = MagicMock()
+        provider = provider_factory(mock_client)
+        provider.timeout_retry_attempts = 1
+        provider.timeout_retry_seconds = 30.0
+
+        mock_choice = MagicMock()
+        mock_choice.message.content = "Recovered after retry."
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create.side_effect = [
+            TimeoutError("Request timed out"),
+            mock_response,
+        ]
+
+        result = provider.generate_grounded_answer(
+            question="Revenue?",
+            evidence="Some evidence",
+        )
+
+        assert result == "Recovered after retry."
+        assert mock_client.chat.completions.create.call_count == 2
+        assert mock_client.chat.completions.create.call_args_list[1].kwargs["timeout"] == 30.0
+
     def test_ollama_request_error_includes_startup_hint(self) -> None:
         import openai
 
@@ -254,6 +288,58 @@ class TestProviderRequests:
 
         with pytest.raises(ProviderError, match="ollama serve"):
             provider.embed_texts(["test"])
+
+    @pytest.mark.parametrize("provider_factory", [_make_openai_provider, _make_ollama_provider])
+    def test_generate_structured_json_parses_json(
+        self,
+        provider_factory: Any,
+    ) -> None:
+        mock_client = MagicMock()
+        provider = provider_factory(mock_client)
+        mock_choice = MagicMock()
+        mock_choice.message.content = '{"metric_mentions": ["revenue"], "planner_confidence": 0.9}'
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        provider.client.chat.completions.create.return_value = mock_response
+
+        payload = provider.generate_structured_json(
+            system_prompt="Plan this",
+            user_prompt="Question: revenue?",
+            json_schema={"type": "object"},
+        )
+
+        assert payload["metric_mentions"] == ["revenue"]
+        assert payload["planner_confidence"] == 0.9
+
+    @pytest.mark.parametrize("provider_factory", [_make_openai_provider, _make_ollama_provider])
+    def test_generate_structured_json_retries_once_on_timeout(
+        self,
+        provider_factory: Any,
+    ) -> None:
+        mock_client = MagicMock()
+        provider = provider_factory(mock_client)
+        provider.timeout_retry_attempts = 1
+        provider.timeout_retry_seconds = 45.0
+
+        mock_choice = MagicMock()
+        mock_choice.message.content = '{"metric_mentions": ["revenue"], "planner_confidence": 0.8}'
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create.side_effect = [
+            TimeoutError("Request timed out"),
+            TimeoutError("Request timed out"),
+            mock_response,
+        ]
+
+        payload = provider.generate_structured_json(
+            system_prompt="Plan this",
+            user_prompt="Question: revenue?",
+            json_schema={"type": "object"},
+        )
+
+        assert payload["planner_confidence"] == 0.8
+        assert mock_client.chat.completions.create.call_count == 3
+        assert mock_client.chat.completions.create.call_args_list[-1].kwargs["timeout"] == 45.0
 
 
 class TestFakeClientRemoteExecution:
@@ -307,12 +393,13 @@ class TestFakeClientRemoteExecution:
 
         _, _, answer = pipeline.run("What was Tesla's 2023 revenue?")
 
-        assert "evidence" in answer.answer_text.lower()
+        assert "total revenue result" in answer.answer_text.lower()
         assert answer.status.value == "ok"
         assert answer.retrieval_debug["provider_mode"] == "openai-compatible"
         assert answer.retrieval_debug["embedding_provider"] == "shared-indexing-backend"
         assert answer.retrieval_debug["answer_provider"] == "openai-compatible"
         assert answer.retrieval_debug["answer_model"] == "gpt-4o-mini"
+        assert answer.retrieval_debug["local_answer_fallback_used"] is True
         assert mock_client.embeddings.create.call_count == 0
         assert mock_client.chat.completions.create.call_count == 1
 
@@ -356,6 +443,12 @@ class TestFakeClientRemoteExecution:
             provider=provider,
             indexing_provider=FakeIndexingProvider(),
         )
+
+        mock_choice = MagicMock()
+        mock_choice.message.content = '{"metric_mentions": [], "planner_confidence": 0.0}'
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create.return_value = mock_response
 
         _, _, answer = pipeline.run("What was Tesla's capital expenditure in FY2023?")
 

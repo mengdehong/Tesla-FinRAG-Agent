@@ -102,6 +102,47 @@ class SemanticScope(StrEnum):
     AUTOMOTIVE = "automotive"
 
 
+class ConceptResolutionMethod(StrEnum):
+    """How a user metric mention was mapped to an XBRL concept."""
+
+    EXACT = "exact"
+    LEXICAL = "lexical"
+    SEMANTIC = "semantic"
+    SAFE_EQUIVALENT = "safe_equivalent"
+    UNRESOLVED = "unresolved"
+
+
+class AgentActionType(StrEnum):
+    """Repair actions the Financial QA agent may take."""
+
+    CONCEPT_REPAIR = "concept_repair"
+    PERIOD_RELAXATION_REPAIR = "period_relaxation_repair"
+    TABLE_RETRIEVAL_REPAIR = "table_retrieval_repair"
+    LLM_TABLE_EXTRACTION = "llm_table_extraction"
+
+
+class AgentEventType(StrEnum):
+    """Streaming events emitted by the Financial QA agent."""
+
+    PLAN_CREATED = "plan_created"
+    CONCEPTS_RESOLVED = "concepts_resolved"
+    RETRIEVAL_COMPLETED = "retrieval_completed"
+    COVERAGE_ASSESSED = "coverage_assessed"
+    REPAIR_SELECTED = "repair_selected"
+    REPAIR_COMPLETED = "repair_completed"
+    ANSWER_COMPLETED = "answer_completed"
+    HALTED = "halted"
+
+
+class AgentHaltReason(StrEnum):
+    """Why the agent stopped iterating."""
+
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    EXHAUSTED = "exhausted"
+    ERROR = "error"
+
+
 # ---------------------------------------------------------------------------
 # Retrieval result
 # ---------------------------------------------------------------------------
@@ -348,6 +389,47 @@ class FactRecord(BaseModel):
     model_config = {"frozen": True}
 
 
+class ConceptCandidate(BaseModel):
+    """A ranked concept candidate for a metric mention."""
+
+    concept: str
+    label: str
+    score: float = Field(ge=0.0, le=1.0)
+    method: ConceptResolutionMethod
+    rationale: str = ""
+
+    model_config = {"frozen": True}
+
+
+class ConceptResolution(BaseModel):
+    """Outcome of resolving one metric mention into a concept."""
+
+    mention: str
+    method: ConceptResolutionMethod
+    accepted: bool
+    concept: str | None = None
+    confidence: float | None = Field(None, ge=0.0, le=1.0)
+    rationale: str = ""
+    candidates: list[ConceptCandidate] = Field(default_factory=list)
+
+    model_config = {"frozen": True}
+
+
+class ConceptCatalogEntry(BaseModel):
+    """One searchable XBRL concept catalog row."""
+
+    concept: str
+    label: str
+    description: str = ""
+    namespace: str
+    local_name: str
+    generated_aliases: list[str] = Field(default_factory=list)
+    embedding_text: str = ""
+    embedding: list[float] | None = None
+
+    model_config = {"frozen": True}
+
+
 # ---------------------------------------------------------------------------
 # Query planning
 # ---------------------------------------------------------------------------
@@ -450,12 +532,26 @@ class QueryPlan(BaseModel):
         "",
         description="Normalized retrieval text used to search the filing corpus.",
     )
+    planner_mode: str = Field(
+        "rule",
+        description="Planner path used to build this plan (e.g. rule, llm, llm_fallback).",
+    )
+    planner_confidence: float | None = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Optional planner confidence from the structured planner.",
+    )
     query_type: QueryType = QueryType.HYBRID_REASONING
     semantic_scope: SemanticScope | None = Field(
         None,
         description="Optional business scope such as 'automotive'.",
     )
     sub_questions: list[str] = Field(default_factory=list)
+    metric_mentions: list[str] = Field(
+        default_factory=list,
+        description="Raw user metric phrases extracted before concept resolution.",
+    )
     sub_queries: list[SubQuery] = Field(
         default_factory=list,
         description="Period-aware decomposed retrieval units for multi-period questions.",
@@ -475,6 +571,14 @@ class QueryPlan(BaseModel):
     required_concepts: list[str] = Field(
         default_factory=list,
         description="XBRL concept names identified in the question.",
+    )
+    alternative_concepts: list[str] = Field(
+        default_factory=list,
+        description="Fallback or semantically-near concepts considered for repair.",
+    )
+    concept_resolutions: list[ConceptResolution] = Field(
+        default_factory=list,
+        description="Per-mention concept resolution diagnostics.",
     )
     needs_calculation: bool = False
     # --- Phase B: Explicit calculation intent fields ---
@@ -531,6 +635,33 @@ class EvidenceBundle(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentAction(BaseModel):
+    """A selected repair action for one agent iteration."""
+
+    action_type: AgentActionType
+    signature: str
+    detail: str = ""
+    target_concepts: list[str] = Field(default_factory=list)
+    target_periods: list[date] = Field(default_factory=list)
+
+    model_config = {"frozen": True}
+
+
+class AgentIterationTrace(BaseModel):
+    """One iteration of the Financial QA agent loop."""
+
+    iteration: int = Field(ge=1)
+    missing_periods: list[str] = Field(default_factory=list)
+    missing_concepts_by_period: dict[str, list[str]] = Field(default_factory=dict)
+    selected_action: AgentAction | None = None
+    new_fact_count: int = 0
+    new_table_count: int = 0
+    new_section_count: int = 0
+    no_progress: bool = False
+
+    model_config = {"frozen": True}
+
+
 # ---------------------------------------------------------------------------
 # Answer payload
 # ---------------------------------------------------------------------------
@@ -574,3 +705,13 @@ class AnswerPayload(BaseModel):
         None, ge=0.0, le=1.0, description="Optional model confidence score."
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AgentEvent(BaseModel):
+    """One streaming event emitted by the Financial QA agent."""
+
+    event_type: AgentEventType
+    iteration: int | None = Field(None, ge=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"frozen": True}

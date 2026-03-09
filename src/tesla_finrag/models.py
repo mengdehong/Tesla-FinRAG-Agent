@@ -528,6 +528,14 @@ class Citation(BaseModel):
     filing_type: FilingType
     period_end: date
     excerpt: str = ""
+    section_title: str | None = Field(
+        None,
+        description="Source section or item title (e.g. 'Item 7: MD&A').",
+    )
+    page_number: int | None = Field(
+        None,
+        description="Page number in the source filing, if available.",
+    )
 
 
 class AnswerPayload(BaseModel):

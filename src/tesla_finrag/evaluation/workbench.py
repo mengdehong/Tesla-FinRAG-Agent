@@ -372,10 +372,13 @@ class WorkbenchPipeline:
         self,
         question: str,
         scope: FilingScope | None = None,
+        response_language: str | None = None,
     ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
         plan = self._planner.plan(question)
         corpus_repo, facts_repo = self._scoped_repositories(scope)
-        return self._run_provider_backed(plan, corpus_repo, facts_repo, scope)
+        return self._run_provider_backed(
+            plan, corpus_repo, facts_repo, scope, response_language=response_language
+        )
 
     def _run_provider_backed(
         self,
@@ -383,6 +386,7 @@ class WorkbenchPipeline:
         corpus_repo: InMemoryCorpusRepository,
         facts_repo: InMemoryFactsRepository,
         scope: FilingScope | None,
+        response_language: str | None = None,
     ) -> tuple[QueryPlan, EvidenceBundle, AnswerPayload]:
         from tesla_finrag.provider import ProviderError
 
@@ -449,6 +453,7 @@ class WorkbenchPipeline:
                 question=plan.original_query,
                 evidence=evidence_summary,
                 calculation_trace=local_answer.calculation_trace or None,
+                response_language=response_language,
             )
         except ProviderError:
             logger.exception(

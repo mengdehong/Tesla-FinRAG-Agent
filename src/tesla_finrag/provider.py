@@ -65,6 +65,7 @@ class GroundedAnswerProvider(Protocol):
         question: str,
         evidence: str,
         calculation_trace: list[str] | None = None,
+        response_language: str | None = None,
     ) -> str: ...
 
 
@@ -191,6 +192,7 @@ def _generate_grounded_answer(
     evidence: str,
     calculation_trace: list[str] | None,
     provider_name: str,
+    response_language: str | None = None,
 ) -> str:
     user_parts = [f"Question: {question}", "", "Evidence:", evidence]
     if calculation_trace:
@@ -205,11 +207,15 @@ def _generate_grounded_answer(
     )
     user_message = "\n".join(user_parts)
 
+    system_prompt = _GROUNDED_ANSWER_SYSTEM_PROMPT
+    if response_language:
+        system_prompt = f"{system_prompt}\n\nIMPORTANT: {response_language}"
+
     try:
         response = client.chat.completions.create(
             model=chat_model,
             messages=[
-                {"role": "system", "content": _GROUNDED_ANSWER_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
             temperature=0.1,
@@ -348,6 +354,7 @@ class OpenAIProvider:
         question: str,
         evidence: str,
         calculation_trace: list[str] | None = None,
+        response_language: str | None = None,
     ) -> str:
         return _generate_grounded_answer(
             client=self.client,
@@ -356,6 +363,7 @@ class OpenAIProvider:
             evidence=evidence,
             calculation_trace=calculation_trace,
             provider_name=self.info.provider_name,
+            response_language=response_language,
         )
 
 
@@ -417,6 +425,7 @@ class OllamaProvider:
         question: str,
         evidence: str,
         calculation_trace: list[str] | None = None,
+        response_language: str | None = None,
     ) -> str:
         return _generate_grounded_answer(
             client=self.client,
@@ -425,4 +434,5 @@ class OllamaProvider:
             evidence=evidence,
             calculation_trace=calculation_trace,
             provider_name=self.info.provider_name,
+            response_language=response_language,
         )

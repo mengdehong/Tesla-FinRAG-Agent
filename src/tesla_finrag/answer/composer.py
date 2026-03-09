@@ -873,7 +873,12 @@ class GroundedAnswerComposer(AnswerService):
         return {fact.concept for fact in bundle.facts if fact.concept in plan.required_concepts}
 
     def _build_citations(self, bundle: EvidenceBundle) -> list[Citation]:
-        """Build citation objects from the evidence bundle."""
+        """Build citation objects from the evidence bundle.
+
+        Populates ``section_title`` and ``page_number`` when available on the
+        source chunk so the UI can render precise provenance coordinates like
+        ``Source: [Tesla 2023 10-K, Item 7: MD&A, Page 43]``.
+        """
         citations: list[Citation] = []
 
         for chunk in bundle.section_chunks:
@@ -886,6 +891,8 @@ class GroundedAnswerComposer(AnswerService):
                         filing_type=filing.filing_type,
                         period_end=filing.period_end,
                         excerpt=chunk.text[:200] if chunk.text else "",
+                        section_title=chunk.section_title or None,
+                        page_number=chunk.page_number,
                     )
                 )
 
@@ -899,6 +906,8 @@ class GroundedAnswerComposer(AnswerService):
                         filing_type=filing.filing_type,
                         period_end=filing.period_end,
                         excerpt=chunk.caption[:200] if chunk.caption else chunk.raw_text[:200],
+                        section_title=chunk.section_title or None,
+                        page_number=chunk.page_number,
                     )
                 )
 

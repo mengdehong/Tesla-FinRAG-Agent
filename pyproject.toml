@@ -8,6 +8,7 @@ dependencies = [
     "httpx[socks]>=0.28.1",
     "openai>=2.26.0",
     "pdfplumber>=0.11.9",
+    "plotly>=5.18.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "python-dotenv>=1.2.2",

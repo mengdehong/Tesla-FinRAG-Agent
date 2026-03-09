@@ -18,8 +18,10 @@ import tesla_finrag.evaluation.runner as runner_module
 from tesla_finrag.evaluation.models import (
     BaselineSummary,
     BenchmarkQuestion,
+    CalcOperation,
     Difficulty,
     EvaluationRun,
+    ExpectedCalc,
     FailureAnalysis,
     QuestionCategory,
     ResultStatus,
@@ -315,7 +317,588 @@ class TestEvaluationRunner:
             answer_text="Revenue in 2023 was mentioned, but evidence is missing.",
             confidence=0.0,
         )
-        assert EvaluationRunner._check_answer(question, answer) is False
+        assert EvaluationRunner._legacy_check(question, answer) is False
+
+
+# ---------------------------------------------------------------------------
+# Structured judge tests
+# ---------------------------------------------------------------------------
+
+
+class TestStructuredJudge:
+    """Verify _structured_check for all assertion axes and operation types."""
+
+    @staticmethod
+    def _make_answer(
+        status: AnswerStatus = AnswerStatus.OK,
+        text: str = "",
+        calc_trace: list[str] | None = None,
+        retrieved_concepts: list[str] | None = None,
+        calc_intent: str | None = None,
+        fact_concepts_by_period: dict[str, list[str]] | None = None,
+        missing_periods: list[str] | None = None,
+    ) -> AnswerPayload:
+        debug: dict = {}
+        if retrieved_concepts is not None:
+            debug["retrieved_fact_concepts"] = retrieved_concepts
+        if calc_intent is not None:
+            debug["calculation_intent"] = calc_intent
+        if fact_concepts_by_period is not None:
+            debug["fact_concepts_by_period"] = fact_concepts_by_period
+        if missing_periods is not None:
+            debug["missing_periods"] = missing_periods
+        return AnswerPayload(
+            plan_id=uuid4(),
+            status=status,
+            answer_text=text,
+            calculation_trace=calc_trace or [],
+            retrieval_debug=debug,
+        )
+
+    @staticmethod
+    def _make_question(**kwargs) -> BenchmarkQuestion:
+        defaults = {
+            "question_id": "SJ-TEST",
+            "question": "test question",
+            "category": "cross_year",
+            "difficulty": "easy",
+        }
+        defaults.update(kwargs)
+        return BenchmarkQuestion(**defaults)
+
+    # --- No structured assertions → (None, None) fallback ---
+
+    def test_no_structured_assertions_returns_none(self) -> None:
+        q = self._make_question()
+        answer = self._make_answer(text="some answer")
+        passed, breakdown = EvaluationRunner._structured_check(q, answer)
+        assert passed is None
+        assert breakdown is None
+
+    # --- Status assertion ---
+
+    def test_status_ok_passes(self) -> None:
+        q = self._make_question(expected_status="ok")
+        answer = self._make_answer(status=AnswerStatus.OK, text="answer")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd is not None
+        assert bd.status_ok is True
+
+    def test_status_mismatch_fails(self) -> None:
+        q = self._make_question(expected_status="ok")
+        answer = self._make_answer(status=AnswerStatus.INSUFFICIENT_EVIDENCE, text="no data")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.status_ok is False
+
+    # --- Facts assertion ---
+
+    def test_facts_all_found_passes(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_facts=["us-gaap:Revenues", "us-gaap:GrossProfit"],
+        )
+        answer = self._make_answer(
+            text="revenue answer",
+            retrieved_concepts=["us-gaap:Revenues", "us-gaap:GrossProfit"],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.facts_found == ["us-gaap:Revenues", "us-gaap:GrossProfit"]
+        assert bd.facts_missing == []
+
+    def test_facts_missing_fails(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_facts=["us-gaap:Revenues", "us-gaap:GrossProfit"],
+        )
+        answer = self._make_answer(
+            text="revenue answer",
+            retrieved_concepts=["us-gaap:Revenues"],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.facts_found == ["us-gaap:Revenues"]
+        assert bd.facts_missing == ["us-gaap:GrossProfit"]
+
+    def test_equivalent_fact_concept_is_accepted(self) -> None:
+        """CostOfRevenue should satisfy CostOfGoodsAndServicesSold assertion."""
+        q = self._make_question(
+            expected_status="ok",
+            expected_facts=["us-gaap:CostOfGoodsAndServicesSold"],
+        )
+        answer = self._make_answer(
+            text="cost answer",
+            retrieved_concepts=["us-gaap:CostOfRevenue"],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.facts_found == ["us-gaap:CostOfGoodsAndServicesSold"]
+        assert bd.facts_missing == []
+
+    def test_period_fact_gate_fails_when_period_reported_missing(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            required_periods=["2022-12-31", "2023-12-31"],
+            expected_facts=["us-gaap:Revenues"],
+        )
+        answer = self._make_answer(
+            text="revenue answer",
+            retrieved_concepts=["us-gaap:Revenues"],
+            fact_concepts_by_period={
+                "2022-12-31": ["us-gaap:Revenues"],
+                "2023-12-31": ["us-gaap:Revenues"],
+            },
+            missing_periods=["2023-12-31"],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.period_facts_ok is False
+        assert bd.periods_missing_facts == ["2023-12-31"]
+
+    def test_period_fact_gate_fails_when_period_lacks_expected_fact(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            required_periods=["2022-12-31", "2023-12-31"],
+            expected_facts=["us-gaap:Revenues"],
+        )
+        answer = self._make_answer(
+            text="revenue answer",
+            retrieved_concepts=["us-gaap:Revenues"],
+            fact_concepts_by_period={
+                "2022-12-31": ["us-gaap:Revenues"],
+                "2023-12-31": ["us-gaap:GrossProfit"],
+            },
+            missing_periods=[],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.period_facts_ok is False
+        assert bd.facts_missing_by_period["2023-12-31"] == ["us-gaap:Revenues"]
+
+    def test_period_fact_gate_accepts_equivalent_concepts(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            required_periods=["2022-12-31", "2023-12-31"],
+            expected_facts=["us-gaap:CostOfGoodsAndServicesSold"],
+        )
+        answer = self._make_answer(
+            text="cost answer",
+            retrieved_concepts=["us-gaap:CostOfRevenue"],
+            fact_concepts_by_period={
+                "2022-12-31": ["us-gaap:CostOfRevenue"],
+                "2023-12-31": ["us-gaap:CostOfRevenue"],
+            },
+            missing_periods=[],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.period_facts_ok is True
+
+    def test_facts_only_without_expected_status(self) -> None:
+        """expected_facts alone should trigger structured judge."""
+        q = self._make_question(
+            expected_facts=["us-gaap:Revenues"],
+        )
+        assert q.has_structured_assertions is True
+        answer = self._make_answer(
+            text="answer",
+            retrieved_concepts=["us-gaap:Revenues"],
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd is not None
+
+    def test_narrative_terms_must_appear_in_answer_text(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_narrative_terms=["supply chain"],
+        )
+        answer = self._make_answer(text="Tesla cited supply chain risks in its filing.")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd is not None
+        assert bd.narrative_terms_found == ["supply chain"]
+        assert bd.narrative_terms_missing == []
+
+    def test_missing_narrative_terms_fail_structured_judge(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_narrative_terms=["supply chain"],
+        )
+        answer = self._make_answer(text="Automotive costs increased year over year.")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd is not None
+        assert bd.narrative_terms_missing == ["supply chain"]
+
+    # --- Calc assertion: lookup ---
+
+    def test_calc_lookup_passes_within_tolerance(self) -> None:
+        """BQ-008 style: lookup 96773000000, answer contains exact match."""
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={
+                "operation": "lookup",
+                "expected_value": 96773000000,
+                "tolerance": 0.01,
+            },
+        )
+        answer = self._make_answer(
+            text="Tesla's total revenue in FY2023 was 96,773,000,000.00.",
+            retrieved_concepts=["us-gaap:Revenues"],
+            calc_intent="lookup",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.calc_correct is True
+        assert "PASS" in bd.calc_detail
+
+    def test_calc_lookup_fails_outside_tolerance(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={
+                "operation": "lookup",
+                "expected_value": 96773000000,
+                "tolerance": 0.01,
+            },
+        )
+        answer = self._make_answer(
+            text="Tesla revenue was 50,000,000,000.",
+            calc_intent="lookup",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.calc_correct is False
+        assert "FAIL" in bd.calc_detail
+
+    def test_calc_lookup_no_numbers_fails(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={
+                "operation": "lookup",
+                "expected_value": 96773000000,
+                "tolerance": 0.01,
+            },
+        )
+        answer = self._make_answer(text="Revenue was significant.", calc_intent="lookup")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.calc_correct is False
+        assert "No numeric values" in bd.calc_detail
+
+    # --- Calc assertion: pct_change ---
+
+    def test_calc_pct_change_passes(self) -> None:
+        """BQ-001 style: pct_change expected 18.80%."""
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={
+                "operation": "pct_change",
+                "expected_value": 18.80,
+                "tolerance": 0.02,
+            },
+        )
+        answer = self._make_answer(
+            text="Year-over-year growth rate was 18.80%.",
+            calc_intent="pct_change",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.calc_correct is True
+
+    # --- Calc assertion: ratio ---
+
+    def test_calc_ratio_passes(self) -> None:
+        """BQ-002 style: ratio GrossProfit/Revenues expected 18.25%."""
+        q = self._make_question(
+            expected_status="ok",
+            expected_facts=["us-gaap:GrossProfit", "us-gaap:Revenues"],
+            expected_calc={
+                "operation": "ratio",
+                "numerator": "us-gaap:GrossProfit",
+                "denominator": "us-gaap:Revenues",
+                "expected_value": 18.25,
+                "tolerance": 0.02,
+            },
+        )
+        answer = self._make_answer(
+            text="Gross profit margin for FY2023 was 18.25%.",
+            retrieved_concepts=["us-gaap:GrossProfit", "us-gaap:Revenues"],
+            calc_intent="ratio",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.calc_correct is True
+        assert bd.facts_missing == []
+
+    # --- Calc assertion: rank (no expected_value) ---
+
+    def test_calc_rank_operation_only_passes(self) -> None:
+        """Rank operation with no expected_value — type check only."""
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={"operation": "rank"},
+        )
+        answer = self._make_answer(text="Q2 2023 had the highest margin.", calc_intent="rank")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.calc_correct is True
+        assert "Operation type assertion only" in bd.calc_detail
+
+    def test_operation_mismatch_fails_structured_judge(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={"operation": "ratio"},
+        )
+        answer = self._make_answer(
+            text="The value is 18.25%.",
+            calc_intent="lookup",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.operation_ok is False
+        assert "FAIL" in bd.operation_detail
+
+    def test_missing_operation_signal_fails_structured_judge(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={"operation": "lookup", "expected_value": 100, "tolerance": 0.01},
+        )
+        answer = self._make_answer(text="Value is 100.")
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.operation_ok is False
+        assert "Missing calculation_intent" in bd.operation_detail
+
+    def test_lookup_allows_step_trace_operation(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={"operation": "lookup", "expected_value": 100, "tolerance": 0.01},
+        )
+        answer = self._make_answer(
+            text="Value is 100.",
+            calc_intent="step_trace",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.operation_ok is True
+
+    # --- Calc value found in calculation_trace ---
+
+    def test_calc_value_found_in_trace(self) -> None:
+        """Numeric value may appear in calculation_trace, not answer text."""
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={
+                "operation": "lookup",
+                "expected_value": 96773000000,
+                "tolerance": 0.01,
+            },
+        )
+        answer = self._make_answer(
+            text="Revenue result for FY2023:",
+            calc_trace=["us-gaap:Revenues (2023-12-31) = 96,773,000,000.00"],
+            calc_intent="lookup",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is True
+        assert bd.calc_correct is True
+
+    # --- Combined: status fail overrides calc pass ---
+
+    def test_status_fail_overrides_calc_pass(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_calc={
+                "operation": "lookup",
+                "expected_value": 100,
+                "tolerance": 0.01,
+            },
+        )
+        answer = self._make_answer(
+            status=AnswerStatus.INSUFFICIENT_EVIDENCE,
+            text="Value is 100.",
+            calc_intent="lookup",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.status_ok is False
+        assert bd.calc_correct is True  # Calc itself passed
+
+    # --- Combined: facts fail overrides calc pass ---
+
+    def test_facts_fail_overrides_calc_pass(self) -> None:
+        q = self._make_question(
+            expected_status="ok",
+            expected_facts=["us-gaap:Revenues"],
+            expected_calc={
+                "operation": "lookup",
+                "expected_value": 100,
+                "tolerance": 0.01,
+            },
+        )
+        answer = self._make_answer(
+            text="Value is 100.",
+            retrieved_concepts=[],  # Facts not found
+            calc_intent="lookup",
+        )
+        passed, bd = EvaluationRunner._structured_check(q, answer)
+        assert passed is False
+        assert bd.facts_missing == ["us-gaap:Revenues"]
+        assert bd.calc_correct is True
+
+    # --- Number extraction edge cases ---
+
+    def test_extract_numbers_handles_commas(self) -> None:
+        nums = EvaluationRunner._extract_numbers("Revenue: 96,773,000,000.00 USD")
+        assert 96773000000.0 in nums
+
+    def test_extract_numbers_handles_negative(self) -> None:
+        nums = EvaluationRunner._extract_numbers("Change: -5.23%")
+        assert -5.23 in nums
+
+    def test_extract_numbers_multiple(self) -> None:
+        nums = EvaluationRunner._extract_numbers("From 81,462 to 96,773 (18.80%)")
+        assert len(nums) == 3
+        assert 81462.0 in nums
+        assert 96773.0 in nums
+        assert 18.80 in nums
+
+    # --- CalcOperation enum validation ---
+
+    def test_invalid_operation_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ExpectedCalc(operation="bogus_op", expected_value=100)
+
+    def test_valid_operations_accepted(self) -> None:
+        for op in CalcOperation:
+            calc = ExpectedCalc(operation=op.value, expected_value=1.0)
+            assert calc.operation == op
+
+
+# ---------------------------------------------------------------------------
+# Dual-track runner integration
+# ---------------------------------------------------------------------------
+
+
+class TestDualTrackRunner:
+    """Verify _run_single populates dual-track fields correctly."""
+
+    def _make_pipeline(
+        self,
+        status: AnswerStatus = AnswerStatus.OK,
+        text: str = "Tesla revenue in 2023 was 96,773,000,000.00.",
+        retrieved_concepts: list[str] | None = None,
+        calc_intent: str | None = "lookup",
+    ):
+        def pipeline(question: str) -> AnswerPayload:
+            debug = {}
+            if retrieved_concepts is not None:
+                debug["retrieved_fact_concepts"] = retrieved_concepts
+            if calc_intent is not None:
+                debug["calculation_intent"] = calc_intent
+            return AnswerPayload(
+                plan_id=uuid4(),
+                status=status,
+                answer_text=text,
+                retrieval_debug=debug,
+            )
+
+        return pipeline
+
+    def test_dual_track_both_pass(self) -> None:
+        """Question with both legacy and structured assertions — both pass."""
+        questions = [
+            {
+                "question_id": "DT-001",
+                "question": "Revenue?",
+                "category": "cross_year",
+                "difficulty": "easy",
+                "expected_answer_contains": ["96,773,000,000.00"],
+                "expected_status": "ok",
+                "expected_calc": {
+                    "operation": "lookup",
+                    "expected_value": 96773000000,
+                    "tolerance": 0.01,
+                },
+            },
+        ]
+        bf = Path("/tmp/dt_test_bq.json")
+        bf.write_text(json.dumps(questions))
+
+        runner = EvaluationRunner(
+            pipeline=self._make_pipeline(),
+            benchmark_path=bf,
+        )
+        run = runner.run_all()
+        r = run.results[0]
+        assert r.passed is True
+        assert r.legacy_passed is True
+        assert r.structured_passed is True
+        assert r.judge_breakdown is not None
+        assert r.judge_breakdown.status_ok is True
+
+    def test_structured_overrides_legacy_fail(self) -> None:
+        """BQ-008 scenario: legacy fails (missing keyword), structured passes."""
+        questions = [
+            {
+                "question_id": "DT-002",
+                "question": "Revenue?",
+                "category": "cross_year",
+                "difficulty": "easy",
+                # Legacy keywords that won't match
+                "expected_answer_contains": ["96,773,000,000.00", "result"],
+                # Structured assertions that should pass
+                "expected_status": "ok",
+                "expected_calc": {
+                    "operation": "lookup",
+                    "expected_value": 96773000000,
+                    "tolerance": 0.01,
+                },
+            },
+        ]
+        bf = Path("/tmp/dt_test_bq2.json")
+        bf.write_text(json.dumps(questions))
+
+        runner = EvaluationRunner(
+            pipeline=self._make_pipeline(),
+            benchmark_path=bf,
+        )
+        run = runner.run_all()
+        r = run.results[0]
+        # Structured passes, so overall passes despite legacy failing
+        assert r.passed is True
+        assert r.legacy_passed is False  # missing "result" keyword
+        assert r.structured_passed is True
+
+    def test_no_structured_falls_back_to_legacy(self) -> None:
+        """Old-style question with no structured assertions → legacy only."""
+        questions = [
+            {
+                "question_id": "DT-003",
+                "question": "Revenue?",
+                "category": "cross_year",
+                "difficulty": "easy",
+                "expected_answer_contains": ["revenue", "2023"],
+            },
+        ]
+        bf = Path("/tmp/dt_test_bq3.json")
+        bf.write_text(json.dumps(questions))
+
+        runner = EvaluationRunner(
+            pipeline=self._make_pipeline(),
+            benchmark_path=bf,
+        )
+        run = runner.run_all()
+        r = run.results[0]
+        assert r.passed is True
+        assert r.legacy_passed is True
+        assert r.structured_passed is None
+        assert r.judge_breakdown is None
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +980,34 @@ class TestDemoResponseContract:
         assert answer_2023.status == AnswerStatus.OK
         assert answer_2022.status == AnswerStatus.INSUFFICIENT_EVIDENCE
         assert answer_2023.retrieval_debug["active_scope"]["fiscal_years"] == [2023]
+
+    def test_composite_provider_answer_falls_back_when_remote_drops_narrative(self) -> None:
+        from unittest.mock import MagicMock
+
+        mock_provider = MagicMock()
+        mock_provider.info.provider_name = "mock"
+        mock_provider.info.as_dict.return_value = {}
+        mock_provider.embed_texts.side_effect = lambda texts: [[0.0]] * len(texts)
+        mock_provider.generate_grounded_answer.return_value = (
+            "The cost of automotive sales revenue increased by $15.52 billion."
+        )
+
+        corpus_repo, facts_repo = _seed_demo_repositories()
+        pipeline = WorkbenchPipeline(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            provider=mock_provider,
+        )
+        question = (
+            "What supply chain risk factors did Tesla mention in its 2023 10-K, "
+            "and how did cost of automotive revenue change between FY2022 and FY2023?"
+        )
+
+        _, _, answer = pipeline.run(question)
+
+        assert answer.status == AnswerStatus.OK
+        assert "supply chain" in answer.answer_text.lower()
+        assert answer.retrieval_debug["composite_local_fallback_used"] is True
 
     def test_answer_payload_has_required_fields(self) -> None:
         plan_id = uuid4()
@@ -776,9 +1387,7 @@ class TestBaselineDiscoverability:
         baseline = load_baseline(baseline_path)
         analyses = load_failure_analyses(fa_path)
         failed_question_ids = {
-            question_id
-            for question_id, passed in baseline.question_pass_fail.items()
-            if not passed
+            question_id for question_id, passed in baseline.question_pass_fail.items() if not passed
         }
         analyzed_question_ids = {fa.question_id for fa in analyses}
 

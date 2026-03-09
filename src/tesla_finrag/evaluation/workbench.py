@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from tesla_finrag.answer import GroundedAnswerComposer
 from tesla_finrag.models import (
     AnswerPayload,
+    AnswerShape,
     AnswerStatus,
     EvidenceBundle,
     FactRecord,
@@ -442,7 +443,7 @@ class WorkbenchPipeline:
             return plan, bundle, local_answer
 
         # Now narrate the answer text using the remote chat model
-        evidence_summary = self._build_evidence_summary(bundle)
+        evidence_summary = self._build_evidence_summary(plan, bundle)
         try:
             remote_text = provider.generate_grounded_answer(
                 question=plan.original_query,
@@ -456,6 +457,11 @@ class WorkbenchPipeline:
             )
             raise
 
+        composite_local_fallback_used = False
+        if self._should_use_local_composite_answer(plan, bundle, remote_text, local_answer):
+            remote_text = local_answer.answer_text
+            composite_local_fallback_used = True
+
         answer = AnswerPayload(
             plan_id=local_answer.plan_id,
             status=local_answer.status,
@@ -465,6 +471,8 @@ class WorkbenchPipeline:
             retrieval_debug=local_answer.retrieval_debug,
             confidence=local_answer.confidence,
         )
+        if composite_local_fallback_used:
+            answer.retrieval_debug["composite_local_fallback_used"] = True
         answer.retrieval_debug.update(
             self._build_retrieval_debug(
                 provider_info=provider_info,
@@ -521,8 +529,11 @@ class WorkbenchPipeline:
         return debug
 
     @staticmethod
-    def _build_evidence_summary(bundle: EvidenceBundle) -> str:
+    def _build_evidence_summary(plan: QueryPlan, bundle: EvidenceBundle) -> str:
         """Assemble a text summary of evidence for the chat model."""
+        if plan.answer_shape == AnswerShape.COMPOSITE:
+            return WorkbenchPipeline._build_composite_evidence_summary(bundle)
+
         parts: list[str] = []
         for chunk in bundle.section_chunks:
             parts.append(f"[{chunk.section_title}] {chunk.text}")
@@ -535,6 +546,57 @@ class WorkbenchPipeline:
                 f"(period ending {fact.period_end})"
             )
         return "\n\n".join(parts) if parts else "No evidence found."
+
+    @staticmethod
+    def _build_composite_evidence_summary(bundle: EvidenceBundle) -> str:
+        """Assemble evidence with explicit narrative/numeric lanes."""
+        parts: list[str] = []
+
+        if bundle.section_chunks:
+            parts.append("Narrative evidence:")
+            for chunk in bundle.section_chunks[:3]:
+                parts.append(f"- [{chunk.section_title}] {chunk.text}")
+
+        numeric_parts: list[str] = []
+        for chunk in bundle.table_chunks[:6]:
+            caption = f"Table: {chunk.caption}\n" if chunk.caption else ""
+            numeric_parts.append(f"{caption}{chunk.raw_text}")
+        for fact in bundle.facts:
+            numeric_parts.append(
+                f"Fact: {fact.label} = {fact.value * fact.scale:,.2f} {fact.unit} "
+                f"(period ending {fact.period_end})"
+            )
+        if numeric_parts:
+            parts.append("Numeric evidence:")
+            parts.extend(f"- {part}" for part in numeric_parts)
+
+        return "\n".join(parts) if parts else "No evidence found."
+
+    @staticmethod
+    def _should_use_local_composite_answer(
+        plan: QueryPlan,
+        bundle: EvidenceBundle,
+        remote_text: str,
+        local_answer: AnswerPayload,
+    ) -> bool:
+        """Fallback to the local composite answer when remote text drops the narrative lane."""
+        if plan.answer_shape != AnswerShape.COMPOSITE:
+            return False
+        if not bundle.section_chunks:
+            return False
+
+        cues: list[str] = []
+        question_lower = plan.original_query.lower()
+        for cue in ("supply chain", "risk factors", "risk", "competition", "logistics"):
+            if cue in question_lower:
+                cues.append(cue)
+
+        if not cues:
+            return False
+
+        remote_lower = remote_text.lower()
+        remote_has_cue = any(cue in remote_lower for cue in cues)
+        return not remote_has_cue
 
     # ------------------------------------------------------------------
     # Scoped repositories

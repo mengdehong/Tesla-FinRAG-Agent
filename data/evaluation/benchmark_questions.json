@@ -6,7 +6,14 @@
     "difficulty": "medium",
     "expected_answer_contains": ["81,462", "96,773", "18.80"],
     "required_periods": ["2022-12-31", "2023-12-31"],
-    "required_concepts": ["us-gaap:Revenues"]
+    "required_concepts": ["us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "pct_change",
+      "expected_value": 18.80,
+      "tolerance": 0.02
+    }
   },
   {
     "question_id": "BQ-002",
@@ -15,7 +22,16 @@
     "difficulty": "medium",
     "expected_answer_contains": ["gross profit", "margin"],
     "required_periods": ["2023-12-31"],
-    "required_concepts": ["us-gaap:GrossProfit", "us-gaap:Revenues"]
+    "required_concepts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "ratio",
+      "numerator": "us-gaap:GrossProfit",
+      "denominator": "us-gaap:Revenues",
+      "expected_value": 18.25,
+      "tolerance": 0.05
+    }
   },
   {
     "question_id": "BQ-003",
@@ -24,7 +40,10 @@
     "difficulty": "hard",
     "expected_answer_contains": ["supply chain", "cost"],
     "required_periods": ["2022-12-31", "2023-12-31"],
-    "required_concepts": ["us-gaap:CostOfGoodsAndServicesSold"]
+    "required_concepts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_narrative_terms": ["supply chain"]
   },
   {
     "question_id": "BQ-004",
@@ -33,7 +52,9 @@
     "difficulty": "hard",
     "expected_answer_contains": ["research", "development"],
     "required_periods": ["2021-12-31", "2022-12-31", "2023-12-31", "2024-12-31"],
-    "required_concepts": ["us-gaap:ResearchAndDevelopmentExpense"]
+    "required_concepts": ["us-gaap:ResearchAndDevelopmentExpense"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:ResearchAndDevelopmentExpense"]
   },
   {
     "question_id": "BQ-005",
@@ -42,7 +63,12 @@
     "difficulty": "hard",
     "expected_answer_contains": ["operating income", "quarter"],
     "required_periods": ["2023-03-31", "2023-06-30", "2023-09-30"],
-    "required_concepts": ["us-gaap:OperatingIncomeLoss"]
+    "required_concepts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "rank"
+    }
   },
   {
     "question_id": "BQ-006",
@@ -51,7 +77,9 @@
     "difficulty": "medium",
     "expected_answer_contains": ["cash"],
     "required_periods": ["2022-12-31", "2023-12-31"],
-    "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
+    "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
   },
   {
     "question_id": "BQ-007",
@@ -60,7 +88,22 @@
     "difficulty": "hard",
     "expected_answer_contains": ["free cash flow", "capital expenditure"],
     "required_periods": ["2023-12-31"],
-    "required_concepts": ["custom:FreeCashFlow", "custom:CapitalExpenditure"]
+    "required_concepts": [
+      "custom:FreeCashFlow",
+      "custom:CapitalExpenditure",
+      "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "expected_status": "ok",
+    "expected_facts": [
+      "custom:FreeCashFlow",
+      "custom:CapitalExpenditure",
+      "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 4358000000,
+      "tolerance": 0.01
+    }
   },
   {
     "question_id": "BQ-008",
@@ -69,7 +112,14 @@
     "difficulty": "easy",
     "expected_answer_contains": ["96,773,000,000.00", "result"],
     "required_periods": ["2023-12-31"],
-    "required_concepts": ["us-gaap:Revenues"]
+    "required_concepts": ["us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 96773000000,
+      "tolerance": 0.01
+    }
   },
   {
     "question_id": "BQ-009",
@@ -78,6 +128,13 @@
     "difficulty": "easy",
     "expected_answer_contains": ["free cash flow", "4,358,000,000.00"],
     "required_periods": ["2023-12-31"],
-    "required_concepts": ["custom:FreeCashFlow"]
+    "required_concepts": ["custom:FreeCashFlow"],
+    "expected_status": "ok",
+    "expected_facts": ["custom:FreeCashFlow"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 4358000000,
+      "tolerance": 0.01
+    }
   }
 ]

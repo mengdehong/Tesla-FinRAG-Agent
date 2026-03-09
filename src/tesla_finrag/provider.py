@@ -80,7 +80,9 @@ class TextEmbeddingProvider(Protocol):
 _GROUNDED_ANSWER_SYSTEM_PROMPT = (
     "You are a financial analyst assistant. You MUST answer the user's question "
     "using ONLY the provided evidence. Do NOT add information beyond what the "
-    "evidence contains. Be concise and factual."
+    "evidence contains. If the question has multiple parts, answer each part "
+    "explicitly and do not omit the narrative portion when narrative evidence "
+    "is provided. Be concise and factual."
 )
 _SOCKS_ERROR_HINT = (
     "SOCKS proxy support is required for openai-compatible mode. "
@@ -200,7 +202,13 @@ def _generate_grounded_answer(
     if calculation_trace:
         user_parts.extend(["", "Calculation steps:"])
         user_parts.extend(f"- {step}" for step in calculation_trace)
-    user_parts.extend(["", "Provide a concise answer based solely on the evidence above."])
+    user_parts.extend(
+        [
+            "",
+            "Provide a concise answer based solely on the evidence above.",
+            "If the question has multiple parts, answer every part explicitly.",
+        ]
+    )
     user_message = "\n".join(user_parts)
 
     try:

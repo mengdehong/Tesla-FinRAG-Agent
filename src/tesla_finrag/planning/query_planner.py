@@ -508,10 +508,7 @@ def _concept_to_human_label(concept: str, *, question: str | None = None) -> str
     Falls back to splitting camelCase into space-separated words.
     """
     question_lower = (question or "").lower()
-    if (
-        concept == "us-gaap:CostOfGoodsAndServicesSold"
-        and "automotive" in question_lower
-    ):
+    if concept == "us-gaap:CostOfGoodsAndServicesSold" and "automotive" in question_lower:
         return "cost of automotive revenue"
 
     # Look up in _METRIC_ALIASES for the first (most common) alias
@@ -964,9 +961,8 @@ class RuleBasedQueryPlanner(QueryPlanningService):
 
         # For composite questions, add a narrative-only retrieval unit
         # so narrative evidence is not starved by numeric concept filters.
-        if (
-            answer_shape == AnswerShape.COMPOSITE
-            and not any(not sq.target_concepts for sq in sub_queries)
+        if answer_shape == AnswerShape.COMPOSITE and not any(
+            not sq.target_concepts for sq in sub_queries
         ):
             sub_queries.append(
                 _build_composite_narrative_sub_query(

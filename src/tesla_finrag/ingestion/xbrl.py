@@ -43,9 +43,7 @@ _OPERATING_CASH_FLOW_CONCEPTS = (
     "us-gaap:NetCashProvidedByUsedInOperatingActivities",
     "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
 )
-_CAPITAL_EXPENDITURE_CONCEPTS = (
-    "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
-)
+_CAPITAL_EXPENDITURE_CONCEPTS = ("us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",)
 
 
 # ---------------------------------------------------------------------------

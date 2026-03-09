@@ -1,13 +1,13 @@
+import uuid
 from datetime import date
-from tesla_finrag.models import FactRecord, PeriodSemantics
-from tesla_finrag.calculation.calculator import StructuredCalculator, CalcOp
+
+from tesla_finrag.calculation.calculator import StructuredCalculator
+from tesla_finrag.models import FactRecord
+
 
 def _make_fact(concept: str, value: float, period: date) -> FactRecord:
-    from test_provider import _mock_embedding_response # dummy
-    from tesla_finrag.models import DocumentReference
-    import uuid
     return FactRecord(
-        id=str(uuid.uuid4()),
+        doc_id=uuid.uuid4(),
         concept=concept,
         value=value,
         scale=1.0,
@@ -16,8 +16,8 @@ def _make_fact(concept: str, value: float, period: date) -> FactRecord:
         period_end=period,
         is_instant=False,
         label=concept,
-        source_doc=DocumentReference(id="test", title="test", doc_type="test", year=2023)
     )
+
 
 def test_margin_direction():
     calc = StructuredCalculator()
@@ -26,13 +26,11 @@ def test_margin_direction():
         _make_fact("us-gaap:Revenues", 1000.0, p),
         _make_fact("us-gaap:GrossProfit", 250.0, p),
     ]
-    
+
     # "us-gaap:GrossProfit / us-gaap:Revenues"
     ratio, trace = calc.calculate("ratio(us-gaap:GrossProfit, us-gaap:Revenues)", facts)
-    assert ratio == 0.25 # 250 / 1000
-    
+    assert ratio == 0.25  # 250 / 1000
+
     # If builder builds concept_a / concept_b:
     ratio2, _ = calc._simple_ratio(facts, "us-gaap:GrossProfit", "us-gaap:Revenues")
     assert ratio2 == 0.25
-    
-

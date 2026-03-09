@@ -84,8 +84,7 @@ class LanceDBRetrievalStore(RetrievalStore):
         """Materialize LanceDB rows for one processed source chunk."""
         if len(segments) != len(embeddings):
             raise ValueError(
-                "segments/embeddings length mismatch: "
-                f"{len(segments)} != {len(embeddings)}"
+                f"segments/embeddings length mismatch: {len(segments)} != {len(embeddings)}"
             )
         if not segments:
             return []
@@ -127,9 +126,7 @@ class LanceDBRetrievalStore(RetrievalStore):
             return
         doc_id_str = str(doc_id)
         try:
-            self._table.delete(
-                f'doc_id = "{doc_id_str}" OR source_doc_id = "{doc_id_str}"'
-            )
+            self._table.delete(f'doc_id = "{doc_id_str}" OR source_doc_id = "{doc_id_str}"')
         except Exception:
             # Backward-compatible fallback for older table schema.
             self._table.delete(f'doc_id = "{doc_id_str}"')

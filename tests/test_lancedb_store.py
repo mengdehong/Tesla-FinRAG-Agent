@@ -128,12 +128,8 @@ class TestLanceDBRetrievalStore:
         doc_id_1 = UUID("00000000-0000-0000-0000-000000000001")
         doc_id_2 = UUID("00000000-0000-0000-0000-000000000002")
 
-        chunk_1 = SectionChunk(
-            doc_id=doc_id_1, section_title="A", text="text a", token_count=2
-        )
-        chunk_2 = SectionChunk(
-            doc_id=doc_id_2, section_title="B", text="text b", token_count=2
-        )
+        chunk_1 = SectionChunk(doc_id=doc_id_1, section_title="A", text="text a", token_count=2)
+        chunk_2 = SectionChunk(doc_id=doc_id_2, section_title="B", text="text b", token_count=2)
         store.index_section_chunk(chunk_1, sample_embedding)
         store.index_section_chunk(chunk_2, [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2])
 

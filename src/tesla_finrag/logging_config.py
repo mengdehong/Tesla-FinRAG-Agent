@@ -19,8 +19,7 @@ import sys
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 _FONT_BBOX_WARNING = (
-    "Could not get FontBBox from font descriptor because "
-    "None cannot be parsed as 4 floats"
+    "Could not get FontBBox from font descriptor because None cannot be parsed as 4 floats"
 )
 
 _configured = False

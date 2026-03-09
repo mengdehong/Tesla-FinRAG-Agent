@@ -128,12 +128,17 @@ class TestIngestCLI:
         from tesla_finrag.__main__ import build_parser
 
         parser = build_parser()
-        args = parser.parse_args([
+        args = parser.parse_args(
+            [
                 "ingest",
-                "--raw-dir", "/tmp/raw",
-                "--output-dir", "/tmp/out",
-                "--workers", "3",
-        ])
+                "--raw-dir",
+                "/tmp/raw",
+                "--output-dir",
+                "/tmp/out",
+                "--workers",
+                "3",
+            ]
+        )
         assert args.raw_dir == "/tmp/raw"
         assert args.output_dir == "/tmp/out"
         assert args.workers == 3

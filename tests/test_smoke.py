@@ -192,12 +192,15 @@ class TestCLISmoke:
         get_workbench_pipeline.cache_clear()
 
         try:
-            with patch(
-                "tesla_finrag.provider.OllamaProvider.from_settings",
-                return_value=_make_ollama_provider("CLI local answer."),
-            ), patch(
-                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
-                return_value=_FakeIndexingProvider(),
+            with (
+                patch(
+                    "tesla_finrag.provider.OllamaProvider.from_settings",
+                    return_value=_make_ollama_provider("CLI local answer."),
+                ),
+                patch(
+                    "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                    return_value=_FakeIndexingProvider(),
+                ),
             ):
                 result = main(
                     [
@@ -232,12 +235,15 @@ class TestCLISmoke:
         get_workbench_pipeline.cache_clear()
 
         try:
-            with patch(
-                "tesla_finrag.provider.OllamaProvider.from_settings",
-                return_value=_make_ollama_provider("CLI local JSON answer."),
-            ), patch(
-                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
-                return_value=_FakeIndexingProvider(),
+            with (
+                patch(
+                    "tesla_finrag.provider.OllamaProvider.from_settings",
+                    return_value=_make_ollama_provider("CLI local JSON answer."),
+                ),
+                patch(
+                    "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                    return_value=_FakeIndexingProvider(),
+                ),
             ):
                 result = main(
                     [
@@ -333,12 +339,15 @@ class TestSharedProcessedRuntime:
         _build_valid_fixture(tmp_path)
         get_workbench_pipeline.cache_clear()
         try:
-            with patch(
-                "tesla_finrag.provider.OllamaProvider.from_settings",
-                return_value=_make_ollama_provider("Shared runtime answer."),
-            ), patch(
-                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
-                return_value=_FakeIndexingProvider(),
+            with (
+                patch(
+                    "tesla_finrag.provider.OllamaProvider.from_settings",
+                    return_value=_make_ollama_provider("Shared runtime answer."),
+                ),
+                patch(
+                    "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                    return_value=_FakeIndexingProvider(),
+                ),
             ):
                 pipeline = get_workbench_pipeline(
                     provider_mode=ProviderMode.LOCAL,
@@ -367,12 +376,15 @@ class TestSharedProcessedRuntime:
         get_workbench_pipeline.cache_clear()
 
         try:
-            with patch(
-                "tesla_finrag.provider.OllamaProvider.from_settings",
-                return_value=_make_ollama_provider("Runner local answer."),
-            ), patch(
-                "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
-                return_value=_FakeIndexingProvider(),
+            with (
+                patch(
+                    "tesla_finrag.provider.OllamaProvider.from_settings",
+                    return_value=_make_ollama_provider("Runner local answer."),
+                ),
+                patch(
+                    "tesla_finrag.provider.IndexingEmbeddingProvider.from_settings",
+                    return_value=_FakeIndexingProvider(),
+                ),
             ):
                 runner = EvaluationRunner()
                 questions = [

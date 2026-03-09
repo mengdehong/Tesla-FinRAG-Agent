@@ -61,10 +61,7 @@ def format_corpus_guidance(exc: ProcessedCorpusError) -> str:
     if isinstance(exc, IncompatibleIndexError):
         return _incompatible_index_guidance(exc)
     # Generic fallback for unknown subclasses.
-    return (
-        f"Processed corpus error: {exc}\n\n"
-        f"Try running:\n\n  {INGEST_COMMAND}\n"
-    )
+    return f"Processed corpus error: {exc}\n\nTry running:\n\n  {INGEST_COMMAND}\n"
 
 
 def check_corpus_readiness(

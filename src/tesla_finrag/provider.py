@@ -135,11 +135,7 @@ def _looks_like_ollama_endpoint(base_url: str | None) -> bool:
     if not base_url:
         return False
     lowered = base_url.lower()
-    return (
-        "localhost:11434" in lowered
-        or "127.0.0.1:11434" in lowered
-        or "ollama" in lowered
-    )
+    return "localhost:11434" in lowered or "127.0.0.1:11434" in lowered or "ollama" in lowered
 
 
 def _resolve_api_key(
@@ -180,9 +176,7 @@ def _embed_texts(
             provider_name=provider_name,
             action="run an embedding request",
             exc=exc,
-            default_hint=(
-                _OLLAMA_STARTUP_HINT if provider_name == "ollama" else None
-            ),
+            default_hint=(_OLLAMA_STARTUP_HINT if provider_name == "ollama" else None),
         ) from exc
 
     sorted_data = sorted(response.data, key=lambda d: d.index)
@@ -225,9 +219,7 @@ def _generate_grounded_answer(
             provider_name=provider_name,
             action="run a chat completion request",
             exc=exc,
-            default_hint=(
-                _OLLAMA_STARTUP_HINT if provider_name == "ollama" else None
-            ),
+            default_hint=(_OLLAMA_STARTUP_HINT if provider_name == "ollama" else None),
         ) from exc
 
     choice = response.choices[0]
@@ -244,9 +236,7 @@ class IndexingEmbeddingProvider:
     provider_name: str = "shared-indexing-backend"
 
     @classmethod
-    def from_settings(
-        cls, settings: AppSettings | None = None
-    ) -> IndexingEmbeddingProvider:
+    def from_settings(cls, settings: AppSettings | None = None) -> IndexingEmbeddingProvider:
         s = settings or get_settings()
         api_key = _resolve_api_key(
             explicit_api_key=s.indexing_embedding_api_key,

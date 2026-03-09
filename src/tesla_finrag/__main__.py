@@ -134,6 +134,7 @@ def _run_ingest(args: argparse.Namespace) -> int:
     print("=" * 60)
     return 0
 
+
 def _run_ask(args: argparse.Namespace) -> int:
     """Execute the ``ask`` subcommand."""
     from tesla_finrag.evaluation.workbench import ProviderMode, get_workbench_pipeline
@@ -229,10 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
         "-p",
         default="local",
         choices=[m.value for m in _get_provider_modes()],
-        help=(
-            "Provider mode: 'local' (default, Ollama-backed) "
-            "or 'openai-compatible' (remote)."
-        ),
+        help=("Provider mode: 'local' (default, Ollama-backed) or 'openai-compatible' (remote)."),
     )
     ask_parser.add_argument(
         "--json",

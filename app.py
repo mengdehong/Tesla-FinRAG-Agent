@@ -52,9 +52,7 @@ with st.sidebar:
         "Provider",
         options=[mode.value for mode in ProviderMode],
         format_func=lambda value: (
-            "local (Ollama)"
-            if value == ProviderMode.LOCAL.value
-            else "remote (OpenAI-compatible)"
+            "local (Ollama)" if value == ProviderMode.LOCAL.value else "remote (OpenAI-compatible)"
         ),
         index=0,
     )

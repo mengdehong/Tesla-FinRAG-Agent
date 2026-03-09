@@ -1,0 +1,48 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "${OLLAMA_HOST_PORT:-11435}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: init
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      - INDEXING_EMBEDDING_BASE_URL=${INDEXING_EMBEDDING_BASE_URL:-http://ollama:11434/v1}
+      - LANCEDB_URI=${LANCEDB_URI:-/app/data/processed/lancedb}
+    depends_on:
+      ollama:
+        condition: service_started
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    env_file:
+      - .env
+    ports:
+      - "${APP_HOST_PORT:-8502}:8501"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434/v1}
+      - LANCEDB_URI=${LANCEDB_URI:-/app/data/processed/lancedb}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

@@ -136,5 +136,87 @@
       "expected_value": 4358000000,
       "tolerance": 0.01
     }
+  },
+  {
+    "question_id": "BQ-010",
+    "question": "比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？",
+    "category": "cross_year",
+    "difficulty": "medium",
+    "expected_answer_contains": ["总营收", "同比", "18.80"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "pct_change",
+      "expected_value": 18.80,
+      "tolerance": 0.02
+    }
+  },
+  {
+    "question_id": "BQ-011",
+    "question": "特斯拉FY2023的毛利率是多少？请展示毛利润除以总营收的计算过程。",
+    "category": "calculation",
+    "difficulty": "medium",
+    "expected_answer_contains": ["毛利率", "毛利润", "总营收"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "ratio",
+      "numerator": "us-gaap:GrossProfit",
+      "denominator": "us-gaap:Revenues",
+      "expected_value": 18.25,
+      "tolerance": 0.05
+    }
+  },
+  {
+    "question_id": "BQ-012",
+    "question": "2023年10-K中，特斯拉提到了哪些供应链风险？FY2022到FY2023汽车销售成本如何变化？",
+    "category": "text_plus_table",
+    "difficulty": "hard",
+    "expected_answer_contains": ["供应链", "成本"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_narrative_terms": ["供应链"]
+  },
+  {
+    "question_id": "BQ-013",
+    "question": "从FY2021到FY2024，特斯拉的研发费用如何变化？请概括趋势。",
+    "category": "time_sequenced",
+    "difficulty": "hard",
+    "expected_answer_contains": ["研发", "趋势"],
+    "required_periods": ["2021-12-31", "2022-12-31", "2023-12-31", "2024-12-31"],
+    "required_concepts": ["us-gaap:ResearchAndDevelopmentExpense"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:ResearchAndDevelopmentExpense"]
+  },
+  {
+    "question_id": "BQ-014",
+    "question": "比较特斯拉2023年Q1、Q2和Q3的营业利润，哪个季度的营业利润率最高？",
+    "category": "multi_period",
+    "difficulty": "hard",
+    "expected_answer_contains": ["营业利润", "季度"],
+    "required_periods": ["2023-03-31", "2023-06-30", "2023-09-30"],
+    "required_concepts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "rank"
+    }
+  },
+  {
+    "question_id": "BQ-015",
+    "question": "截至2023年12月31日，特斯拉的现金及现金等价物是多少？相比2022年末如何变化？",
+    "category": "balance_sheet",
+    "difficulty": "medium",
+    "expected_answer_contains": ["现金及现金等价物"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
   }
 ]

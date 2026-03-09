@@ -2,6 +2,7 @@
 
 > **Baseline run:** `56e373d19037` (2026-03-09)
 > **Pass rate:** 7/9 (77.78%)
+> **Benchmark dataset:** expanded to 15 bilingual questions; rerun baseline after `data/processed/` is prepared in the target environment
 
 ## 1. Architecture Overview
 
@@ -84,7 +85,22 @@ The current fact store indexes the following concepts:
 
 ## 3. Benchmark Outcomes
 
-### Latest Baseline (run `56e373d19037`, 2026-03-09)
+### Expanded Benchmark Inventory
+
+The repository benchmark file now contains **15 questions** covering all six existing categories, with both English and Chinese prompts included:
+
+| Category | Count | Notes |
+|---|---|---|
+| `cross_year` | 3 | English + Chinese revenue comparison / lookup |
+| `calculation` | 4 | Ratio, lookup, and Chinese calculation prompts |
+| `text_plus_table` | 2 | English + Chinese narrative/table linkage |
+| `time_sequenced` | 2 | English + Chinese trend questions |
+| `multi_period` | 2 | English + Chinese quarter comparison / ranking |
+| `balance_sheet` | 2 | English + Chinese balance-sheet questions |
+
+This expanded set is intentionally sized for an interview deliverable: large enough to show category coverage, still small enough to inspect manually.
+
+### Latest Accepted Baseline (legacy 9-question run `56e373d19037`, 2026-03-09)
 
 | Metric | Value |
 |---|---|
@@ -95,7 +111,9 @@ The current fact store indexes the following concepts:
 | Pass rate | **77.78%** |
 | Avg latency | 17,357.63 ms |
 
-### Per-Question Results
+The latest accepted baseline still points at the earlier 9-question run because this repository snapshot does not commit a ready-to-run `data/processed/` corpus. Once processed artifacts are generated in the target environment, rerun the evaluation runner to refresh the accepted baseline against the expanded bilingual benchmark file.
+
+### Legacy Per-Question Results
 
 | ID | Category | Difficulty | Status | Notes |
 |---|---|---|---|---|
@@ -173,7 +191,7 @@ uv run python -m tesla_finrag.evaluation.runner
 uv run python -m tesla_finrag.evaluation.runner --accept-baseline
 ```
 
-This executes all 9 benchmark questions and saves a timestamped run file to `data/evaluation/runs/`. The stable pointer `data/evaluation/latest_baseline.json` is only updated when `--accept-baseline` is provided.
+This executes the current benchmark file, which now contains 15 bilingual questions, and saves a timestamped run file to `data/evaluation/runs/`. The stable pointer `data/evaluation/latest_baseline.json` is only updated when `--accept-baseline` is provided.
 
 ### Validation Commands
 
@@ -197,6 +215,7 @@ These questions currently pass the benchmark and produce good answers:
 3. "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?" (BQ-001)
 4. "What was Tesla's gross profit margin for FY2023? Show how gross profit divided by total revenue produces the margin percentage." (BQ-002)
 5. "Compare Tesla's operating income across Q1 2023, Q2 2023, and Q3 2023. Which quarter had the highest operating margin?" (BQ-005)
+6. "比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？" (BQ-010)
 
 ## 6. Artifact Locations
 

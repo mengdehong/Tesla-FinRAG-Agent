@@ -1171,6 +1171,37 @@ class TestBenchmarkDataIntegrity:
         ids = [q.question_id for q in questions]
         assert len(ids) == len(set(ids)), "Question IDs must be unique"
 
+    def test_benchmark_question_count_matches_recruiting_scope(self) -> None:
+        path = self._PROJECT_ROOT / "data" / "evaluation" / "benchmark_questions.json"
+        if not path.exists():
+            pytest.skip("benchmark_questions.json not found")
+        questions = load_benchmark_questions(path)
+        assert 12 <= len(questions) <= 20, "Recruiting benchmark should stay between 12 and 20"
+
+    def test_each_question_category_has_multiple_examples(self) -> None:
+        path = self._PROJECT_ROOT / "data" / "evaluation" / "benchmark_questions.json"
+        if not path.exists():
+            pytest.skip("benchmark_questions.json not found")
+        questions = load_benchmark_questions(path)
+        category_counts = {category: 0 for category in QuestionCategory}
+        for question in questions:
+            category_counts[question.category] += 1
+        assert all(count >= 2 for count in category_counts.values()), (
+            "Each benchmark category should have at least two questions"
+        )
+
+    def test_benchmark_includes_chinese_questions(self) -> None:
+        path = self._PROJECT_ROOT / "data" / "evaluation" / "benchmark_questions.json"
+        if not path.exists():
+            pytest.skip("benchmark_questions.json not found")
+        questions = load_benchmark_questions(path)
+        chinese_count = sum(
+            1
+            for question in questions
+            if any("\u4e00" <= ch <= "\u9fff" for ch in question.question)
+        )
+        assert chinese_count >= 5, "Benchmark should include a meaningful set of Chinese questions"
+
     def test_failure_analysis_case_ids_unique(self) -> None:
         path = self._PROJECT_ROOT / "data" / "evaluation" / "failure_analyses.json"
         if not path.exists():

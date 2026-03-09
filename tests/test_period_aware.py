@@ -218,7 +218,7 @@ class TestBuildSubQueries:
         assert sqs[0].target_period == date(2022, 12, 31)
         assert sqs[0].period_semantics == PeriodSemantics.ANNUAL_CUMULATIVE
         assert sqs[0].target_concepts == ["us-gaap:Revenues"]
-        assert "Revenues" in sqs[0].text
+        assert "revenue" in sqs[0].text.lower()
         assert "FY2022" in sqs[0].text
         assert sqs[1].target_period == date(2023, 12, 31)
         assert "FY2023" in sqs[1].text

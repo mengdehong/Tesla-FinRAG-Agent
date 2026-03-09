@@ -26,7 +26,9 @@ from tesla_finrag.calculation.calculator import (
 from tesla_finrag.evidence.linker import EvidenceLinker
 from tesla_finrag.models import (
     AnswerPayload,
+    AnswerShape,
     AnswerStatus,
+    CalculationIntent,
     Citation,
     EvidenceBundle,
     FactRecord,
@@ -76,6 +78,10 @@ class GroundedAnswerComposer(AnswerService):
         5. Compose the answer text from evidence and calculations.
         6. Compute confidence based on evidence quality.
 
+        For COMPOSITE questions (narrative + numeric), the two lanes are
+        evaluated independently: a missing numeric lane does not discard
+        available narrative evidence.
+
         Args:
             plan: The structured query plan.
             bundle: Retrieved evidence bundle.
@@ -89,6 +95,7 @@ class GroundedAnswerComposer(AnswerService):
             required_concepts=plan.required_concepts,
             required_periods=plan.required_periods,
             period_semantics=plan.period_semantics if plan.period_semantics else None,
+            original_query=plan.original_query,
         )
 
         # Step 2: Check evidence sufficiency (per-period coverage)
@@ -146,12 +153,31 @@ class GroundedAnswerComposer(AnswerService):
                         f"vs {exc.details.get('semantics_b', '?')}"
                     )
 
+        # Step 3b: Composite partial answer support (Phase C)
+        # For COMPOSITE questions, if the numeric lane failed but
+        # narrative section chunks are available, produce a partial
+        # answer instead of short-circuiting.
+        is_composite = plan.answer_shape == AnswerShape.COMPOSITE
+        numeric_limitation_reasons: list[str] = []
+        has_narrative = len(enriched.section_chunks) > 0
+
+        if is_composite and limitation_reasons and has_narrative:
+            # Move limitation_reasons aside — they apply to the numeric
+            # lane only.  The narrative lane can still produce an answer.
+            numeric_limitation_reasons = list(limitation_reasons)
+            limitation_reasons = []
+
         # Step 4: Build citations
         citations = self._build_citations(enriched)
 
         # Step 5: Compose answer text
         if limitation_reasons:
             answer_text = self._compose_limitation_text(limitation_reasons)
+        elif is_composite and numeric_limitation_reasons:
+            # Composite partial answer: narrative + numeric limitation
+            answer_text = self._compose_composite_text(
+                plan, enriched, calc_result, calc_trace, numeric_limitation_reasons
+            )
         else:
             answer_text = self._compose_text(plan, enriched, calc_result, calc_trace)
 
@@ -162,23 +188,50 @@ class GroundedAnswerComposer(AnswerService):
             else:
                 status = AnswerStatus.INSUFFICIENT_EVIDENCE
             confidence = 0.0
+        elif is_composite and numeric_limitation_reasons:
+            # Composite partial: narrative succeeded, numeric limited
+            status = AnswerStatus.OK
+            confidence = 0.5  # partial confidence
         else:
             status, confidence = self._assess_quality(enriched, plan)
 
         # Step 7: Build retrieval debug info with limitation reasons
+        # Build ground-truth evidence fields for structured evaluation.
+        # retrieved_fact_concepts: deduplicated concepts actually in the
+        #   enriched evidence bundle (NOT planner-requested concepts).
+        # fact_concepts_by_period: period -> concepts mapping so the judge
+        #   can verify per-period coverage.
+        retrieved_fact_concepts = sorted({f.concept for f in enriched.facts})
+        fact_concepts_by_period: dict[str, list[str]] = {}
+        for fact in enriched.facts:
+            period_key = str(fact.period_end)
+            fact_concepts_by_period.setdefault(period_key, [])
+            if fact.concept not in fact_concepts_by_period[period_key]:
+                fact_concepts_by_period[period_key].append(fact.concept)
+
+        all_limitation_reasons = limitation_reasons or numeric_limitation_reasons
+
         retrieval_debug = {
             "section_chunks_count": len(enriched.section_chunks),
             "table_chunks_count": len(enriched.table_chunks),
             "fact_records_count": len(enriched.facts),
             "retrieval_scores": enriched.retrieval_scores,
             "query_type": plan.query_type.value,
+            "calculation_intent": (
+                plan.calculation_intent.value if plan.calculation_intent is not None else None
+            ),
             "required_periods": [str(p) for p in plan.required_periods],
             "required_concepts": plan.required_concepts,
             "period_semantics": plan.period_semantics,
-            "limitation_reasons": limitation_reasons,
+            "limitation_reasons": all_limitation_reasons,
+            "numeric_limitation_reasons": numeric_limitation_reasons,
             "missing_periods": missing_periods,
             "missing_concepts_by_period": missing_concepts_by_period,
             "missing_narrative_periods": missing_narrative_periods,
+            "retrieved_fact_concepts": retrieved_fact_concepts,
+            "fact_concepts_by_period": fact_concepts_by_period,
+            "is_composite": is_composite,
+            "table_fallback_count": enriched.metadata.get("table_fallback_count", 0),
             **enriched.metadata,
         }
 
@@ -201,7 +254,352 @@ class GroundedAnswerComposer(AnswerService):
         plan: QueryPlan,
         facts: list[FactRecord],
     ) -> tuple[float | None, list[str]]:
-        """Run calculations based on the query plan and available facts."""
+        """Run calculations based on the query plan and available facts.
+
+        When ``plan.calculation_intent`` is set (Phase B), uses explicit
+        intent-based routing for deterministic behaviour.  Otherwise falls
+        back to the legacy ``len(required_concepts)`` heuristic.
+        """
+        if plan.calculation_intent is not None:
+            return self._run_intent_based(plan, facts)
+        return self._run_legacy_routing(plan, facts)
+
+    # -- Intent-based routing (Phase B) ------------------------------------
+
+    def _run_intent_based(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+    ) -> tuple[float | None, list[str]]:
+        """Dispatch to the correct calculator method based on explicit intent."""
+        intent = plan.calculation_intent
+        operands = plan.calculation_operands
+
+        if intent == CalculationIntent.PCT_CHANGE:
+            return self._intent_pct_change(plan, facts, operands)
+        if intent == CalculationIntent.RATIO:
+            return self._intent_ratio(plan, facts, operands)
+        if intent == CalculationIntent.DIFFERENCE:
+            return self._intent_difference(plan, facts, operands)
+        if intent == CalculationIntent.RANK:
+            return self._intent_rank(plan, facts, operands)
+        if intent == CalculationIntent.STEP_TRACE:
+            return self._intent_step_trace(plan, facts)
+        # LOOKUP (default)
+        return self._intent_lookup(plan, facts)
+
+    def _intent_pct_change(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+        operands: list,
+    ) -> tuple[float | None, list[str]]:
+        """Handle PCT_CHANGE intent: period-over-period percentage change."""
+        base_ops = [o for o in operands if o.role == "base"]
+        target_ops = [o for o in operands if o.role == "target"]
+        if base_ops and target_ops:
+            concept = base_ops[0].concept
+            period_a = base_ops[0].period
+            period_b = target_ops[0].period
+            if period_a and period_b:
+                return self._calculator.period_over_period(
+                    facts, concept, period_a, period_b, as_percent=True
+                )
+        # Fallback: use sorted required_periods
+        if plan.required_concepts and len(plan.required_periods) >= 2:
+            concept = plan.required_concepts[0]
+            periods = sorted(plan.required_periods)
+            return self._calculator.period_over_period(
+                facts, concept, periods[0], periods[-1], as_percent=True
+            )
+        return None, ["PCT_CHANGE: insufficient operands"]
+
+    def _intent_ratio(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+        operands: list,
+    ) -> tuple[float | None, list[str]]:
+        """Handle RATIO intent: compute numerator / denominator."""
+        ratio_pairs = self._ratio_pairs_from_operands(plan, operands)
+        if ratio_pairs:
+            ratio_results: list[tuple[date | None, float]] = []
+            trace: list[str] = []
+            for period, numerator, denominator in ratio_pairs:
+                ratio, pair_trace = self._calculator.compute_ratio(
+                    facts,
+                    numerator,
+                    denominator,
+                    period,
+                )
+                ratio_results.append((period, ratio))
+                trace.extend(pair_trace)
+                if self._display_ratio_as_percent(plan):
+                    if period is None:
+                        trace.append(f"Percentage: {ratio * 100:,.2f}%")
+                    else:
+                        trace.append(f"Percentage ({period}): {ratio * 100:,.2f}%")
+
+            if len(ratio_results) >= 2 and plan.answer_shape == AnswerShape.COMPARISON:
+                first_period, first_ratio = ratio_results[0]
+                last_period, last_ratio = ratio_results[-1]
+                delta_percentage_points = (last_ratio - first_ratio) * 100
+                trace.append(
+                    "Change in ratio: "
+                    f"{last_ratio * 100:,.2f}% ({last_period}) - "
+                    f"{first_ratio * 100:,.2f}% ({first_period}) = "
+                    f"{delta_percentage_points:,.2f} percentage points"
+                )
+                return delta_percentage_points, trace
+
+            final_ratio = ratio_results[-1][1]
+            if self._display_ratio_as_percent(plan):
+                return final_ratio * 100, trace
+            return final_ratio, trace
+
+        # Fallback: first two required_concepts
+        if len(plan.required_concepts) >= 2:
+            period = plan.required_periods[0] if plan.required_periods else None
+            ratio, trace = self._calculator.compute_ratio(
+                facts,
+                plan.required_concepts[0],
+                plan.required_concepts[1],
+                period,
+            )
+            if self._display_ratio_as_percent(plan):
+                trace.append(f"Percentage: {ratio * 100:,.2f}%")
+                return ratio * 100, trace
+            return ratio, trace
+        return None, ["RATIO: insufficient operands"]
+
+    def _intent_difference(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+        operands: list,
+    ) -> tuple[float | None, list[str]]:
+        """Handle DIFFERENCE intent: absolute change between periods."""
+        base_ops = [o for o in operands if o.role == "base"]
+        target_ops = [o for o in operands if o.role == "target"]
+        if base_ops and target_ops:
+            concept = base_ops[0].concept
+            period_a = base_ops[0].period
+            period_b = target_ops[0].period
+            if period_a and period_b:
+                return self._calculator.period_over_period(
+                    facts, concept, period_a, period_b, as_percent=False
+                )
+        # Fallback
+        if plan.required_concepts and len(plan.required_periods) >= 2:
+            concept = plan.required_concepts[0]
+            periods = sorted(plan.required_periods)
+            return self._calculator.period_over_period(
+                facts, concept, periods[0], periods[-1], as_percent=False
+            )
+        return None, ["DIFFERENCE: insufficient operands"]
+
+    def _intent_rank(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+        operands: list,
+    ) -> tuple[float | None, list[str]]:
+        """Handle RANK intent: rank periods by concept value."""
+        ratio_pairs = self._ratio_pairs_from_operands(plan, operands)
+        if ratio_pairs:
+            ranked_periods: list[tuple[date | None, float]] = []
+            ratio_trace: list[str] = []
+            for period, numerator, denominator in ratio_pairs:
+                ratio, trace = self._calculator.compute_ratio(
+                    facts,
+                    numerator,
+                    denominator,
+                    period,
+                )
+                ratio_trace.extend(trace)
+                ranked_periods.append((period, ratio))
+
+            ranked_periods.sort(key=lambda item: item[1], reverse=True)
+            trace = ["Ranking derived ratio (highest to lowest):"]
+            for index, (period, ratio) in enumerate(ranked_periods, 1):
+                label = f"{period}" if period is not None else "unscoped"
+                if self._display_ratio_as_percent(plan):
+                    trace.append(f"  {index}. {ratio * 100:,.2f}% (period ending {label})")
+                else:
+                    trace.append(f"  {index}. {ratio:,.4f} (period ending {label})")
+            trace.extend(ratio_trace)
+            top_ratio = ranked_periods[0][1]
+            if self._display_ratio_as_percent(plan):
+                return top_ratio * 100, trace
+            return top_ratio, trace
+
+        concept = operands[0].concept if operands else None
+        if concept is None and plan.required_concepts:
+            concept = plan.required_concepts[0]
+        if concept:
+            return self._calculator.rank(facts, concept)
+        return None, ["RANK: no concept specified"]
+
+    def _intent_step_trace(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+    ) -> tuple[float | None, list[str]]:
+        """Handle STEP_TRACE intent: detailed lookup with step-by-step output."""
+        minuend_ops = [o for o in plan.calculation_operands if o.role == "minuend"]
+        subtrahend_ops = [o for o in plan.calculation_operands if o.role == "subtrahend"]
+        result_ops = [o for o in plan.calculation_operands if o.role == "result"]
+        if minuend_ops and subtrahend_ops:
+            steps: list[str] = []
+            final_result: float | None = None
+            periods = self._period_order_for_lookup(plan)
+            for period in periods:
+                minuend = self._lookup_fact_value(facts, minuend_ops[0].concept, period)
+                subtrahend = self._lookup_fact_value(facts, subtrahend_ops[0].concept, period)
+                if minuend is None or subtrahend is None:
+                    steps.append(f"STEP_TRACE: missing operands for period {period or 'unscoped'}")
+                    continue
+                computed = minuend - subtrahend
+                final_result = computed
+                steps.append(
+                    f"Operating cash flow ({period}): {minuend:,.2f}"
+                    if period is not None
+                    else f"Operating cash flow: {minuend:,.2f}"
+                )
+                steps.append(
+                    f"Capital expenditure ({period}): {subtrahend:,.2f}"
+                    if period is not None
+                    else f"Capital expenditure: {subtrahend:,.2f}"
+                )
+                steps.append(
+                    f"Free cash flow ({period}): {minuend:,.2f} - {subtrahend:,.2f} = "
+                    f"{computed:,.2f}"
+                    if period is not None
+                    else f"Free cash flow: {minuend:,.2f} - {subtrahend:,.2f} = {computed:,.2f}"
+                )
+                if result_ops:
+                    grounded_result = self._lookup_fact_value(facts, result_ops[0].concept, period)
+                    if grounded_result is not None:
+                        detail = (
+                            "matches" if abs(grounded_result - computed) < 1e-6 else "differs from"
+                        )
+                        steps.append(
+                            f"Grounded FCF fact ({period}): {grounded_result:,.2f} "
+                            f"({detail} computed result)"
+                            if period is not None
+                            else f"Grounded FCF fact: {grounded_result:,.2f} "
+                            f"({detail} computed result)"
+                        )
+            if final_result is not None:
+                return final_result, steps
+        return self._intent_lookup(plan, facts)
+
+    def _intent_lookup(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+    ) -> tuple[float | None, list[str]]:
+        """Handle LOOKUP intent: direct fact retrieval."""
+        all_trace: list[str] = []
+        result: float | None = None
+        seen_concepts: set[str] = set()
+        concept_order: list[str] = []
+        for operand in plan.calculation_operands:
+            if (
+                operand.role in {"primary", "result", "target"}
+                and operand.concept not in seen_concepts
+            ):
+                concept_order.append(operand.concept)
+                seen_concepts.add(operand.concept)
+        for concept in plan.required_concepts:
+            if concept not in seen_concepts:
+                concept_order.append(concept)
+                seen_concepts.add(concept)
+
+        for concept in concept_order:
+            for period in self._period_order_for_lookup(plan):
+                match = next(
+                    (
+                        f
+                        for f in facts
+                        if f.concept == concept and (period is None or f.period_end == period)
+                    ),
+                    None,
+                )
+                if match:
+                    val = match.value * match.scale
+                    all_trace.append(
+                        f"{match.label}: {val:,.2f} {match.unit} (period ending {match.period_end})"
+                    )
+                    if result is None:
+                        result = val
+                else:
+                    all_trace.append(f"Missing {concept} for period {period}")
+        return result, all_trace
+
+    @staticmethod
+    def _display_ratio_as_percent(plan: QueryPlan) -> bool:
+        lower = plan.original_query.lower()
+        return "margin" in lower or "percent" in lower or "percentage" in lower
+
+    @staticmethod
+    def _period_order_for_lookup(plan: QueryPlan) -> list[date | None]:
+        return list(plan.required_periods) if plan.required_periods else [None]
+
+    @staticmethod
+    def _lookup_fact_value(
+        facts: list[FactRecord],
+        concept: str,
+        period: date | None,
+    ) -> float | None:
+        for fact in facts:
+            if fact.concept != concept:
+                continue
+            if period is not None and fact.period_end != period:
+                continue
+            return fact.value * fact.scale
+        return None
+
+    @staticmethod
+    def _ratio_pairs_from_operands(
+        plan: QueryPlan,
+        operands: list,
+    ) -> list[tuple[date | None, str, str]]:
+        num_ops = [o for o in operands if o.role == "numerator"]
+        den_ops = [o for o in operands if o.role == "denominator"]
+        if not num_ops or not den_ops:
+            return []
+
+        periods = {
+            *(o.period for o in num_ops if o.period is not None),
+            *(o.period for o in den_ops if o.period is not None),
+        }
+        if not periods:
+            return [(None, num_ops[0].concept, den_ops[0].concept)]
+
+        pairs: list[tuple[date | None, str, str]] = []
+        ordered_periods = sorted(periods)
+        for period in ordered_periods:
+            numerator = next((o.concept for o in num_ops if o.period == period), num_ops[0].concept)
+            denominator = next(
+                (o.concept for o in den_ops if o.period == period),
+                den_ops[0].concept,
+            )
+            pairs.append((period, numerator, denominator))
+
+        if not ordered_periods and plan.required_periods:
+            return [(plan.required_periods[0], num_ops[0].concept, den_ops[0].concept)]
+
+        return pairs
+
+    # -- Legacy routing (pre-Phase B fallback) -----------------------------
+
+    def _run_legacy_routing(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+    ) -> tuple[float | None, list[str]]:
+        """Legacy calculation routing based on len(required_concepts)."""
         all_trace: list[str] = []
         result: float | None = None
 
@@ -522,8 +920,9 @@ class GroundedAnswerComposer(AnswerService):
 
         elif plan.query_type == QueryType.NARRATIVE_COMPARE and bundle.section_chunks:
             parts.append("From Tesla's SEC filings:\n")
-            for chunk in bundle.section_chunks[:3]:
-                parts.append(f"[{chunk.section_title}] {chunk.text[:300]}")
+            for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
+                excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
+                parts.append(f"[{chunk.section_title}] {excerpt}")
 
         else:
             # Hybrid: combine narrative and facts
@@ -532,8 +931,9 @@ class GroundedAnswerComposer(AnswerService):
             if calc_trace:
                 for line in calc_trace:
                     parts.append(line)
-            for chunk in bundle.section_chunks[:2]:
-                parts.append(f"\n[{chunk.section_title}] {chunk.text[:300]}")
+            for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=2):
+                excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
+                parts.append(f"\n[{chunk.section_title}] {excerpt}")
 
         if not parts:
             parts.append(
@@ -542,6 +942,105 @@ class GroundedAnswerComposer(AnswerService):
             )
 
         return "\n".join(parts)
+
+    def _compose_composite_text(
+        self,
+        plan: QueryPlan,
+        bundle: EvidenceBundle,
+        calc_result: float | None,
+        calc_trace: list[str],
+        numeric_limitations: list[str],
+    ) -> str:
+        """Compose answer for composite (narrative + numeric) questions.
+
+        Includes available narrative evidence and any calculation results,
+        followed by a limitation note for the numeric lane if it failed.
+        """
+        parts: list[str] = ["Based on Tesla's SEC filings:\n"]
+
+        # Narrative lane: include section chunks
+        for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
+            excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
+            parts.append(f"[{chunk.section_title}] {excerpt}")
+
+        # Numeric lane: include calc results if available
+        if calc_trace:
+            parts.append("")
+            for line in calc_trace:
+                parts.append(line)
+            if calc_result is not None:
+                parts.append(f"\nResult: {calc_result:,.2f}")
+        elif numeric_limitations:
+            # Numeric lane failed — add limitation note
+            parts.append("")
+            parts.append(
+                "Note: The numeric component of this question could not be "
+                "fully grounded from the available financial data."
+            )
+            for reason in numeric_limitations:
+                parts.append(f"  - {reason}")
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _narrative_cues_from_query(query: str) -> list[str]:
+        lower = query.lower()
+        cues: list[str] = []
+        for cue in (
+            "supply chain",
+            "risk factors",
+            "risk",
+            "competition",
+            "raw material",
+            "logistics",
+            "semiconductor",
+            "geopolitical",
+        ):
+            if cue in lower:
+                cues.append(cue)
+        return cues
+
+    def _prioritize_section_chunks(
+        self,
+        plan: QueryPlan,
+        chunks: list,
+        *,
+        limit: int,
+    ) -> list:
+        """Prioritize section chunks that match narrative cues in the query."""
+        if not chunks:
+            return []
+        cues = self._narrative_cues_from_query(plan.original_query)
+        if not cues:
+            return chunks[:limit]
+
+        scored = []
+        for index, chunk in enumerate(chunks):
+            text = chunk.text.lower()
+            score = sum(1 for cue in cues if cue in text)
+            scored.append((score, index, chunk))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [chunk for _, _, chunk in scored[:limit]]
+
+    def _narrative_excerpt(
+        self,
+        plan: QueryPlan,
+        text: str,
+        *,
+        max_chars: int = 300,
+    ) -> str:
+        """Extract an excerpt that prefers containing query narrative cues."""
+        if len(text) <= max_chars:
+            return text
+        lower = text.lower()
+        for cue in self._narrative_cues_from_query(plan.original_query):
+            pos = lower.find(cue)
+            if pos == -1:
+                continue
+            start = max(0, pos - 80)
+            end = min(len(text), start + max_chars)
+            return text[start:end]
+        return text[:max_chars]
 
     def _assess_quality(
         self,

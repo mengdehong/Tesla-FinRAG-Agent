@@ -361,6 +361,58 @@ class SubQuery(BaseModel):
     model_config = {"frozen": True}
 
 
+class CalculationIntent(StrEnum):
+    """Explicit calculation type the planner infers from the question.
+
+    Used by the composer to route to the correct calculation method
+    instead of relying on ``len(required_concepts)`` heuristics.
+    """
+
+    LOOKUP = "lookup"
+    RATIO = "ratio"
+    DIFFERENCE = "difference"
+    PCT_CHANGE = "pct_change"
+    RANK = "rank"
+    STEP_TRACE = "step_trace"
+
+
+class AnswerShape(StrEnum):
+    """Expected shape of the final answer.
+
+    Guides the composer's text-generation template selection.
+    """
+
+    SINGLE_VALUE = "single_value"
+    COMPARISON = "comparison"
+    RANKING = "ranking"
+    COMPOSITE = "composite"
+
+
+class CalculationOperand(BaseModel):
+    """A single operand for a calculation (concept + role + period).
+
+    Used by the planner to explicitly declare numerator/denominator
+    or base/target for ratio and pct_change calculations, removing
+    ambiguity from the composer.
+    """
+
+    concept: str = Field(
+        description="XBRL concept name, e.g. 'us-gaap:GrossProfit'.",
+    )
+    role: str = Field(
+        "primary",
+        description=(
+            "Role in the calculation: 'numerator', 'denominator', 'base', 'target', 'primary'."
+        ),
+    )
+    period: date | None = Field(
+        None,
+        description="Specific period this operand targets (if relevant).",
+    )
+
+    model_config = {"frozen": True}
+
+
 class QueryPlan(BaseModel):
     """Structured representation of a decomposed user question.
 
@@ -392,6 +444,32 @@ class QueryPlan(BaseModel):
         description="XBRL concept names identified in the question.",
     )
     needs_calculation: bool = False
+    # --- Phase B: Explicit calculation intent fields ---
+    calculation_intent: CalculationIntent | None = Field(
+        None,
+        description=(
+            "Explicit calculation type inferred from the question. "
+            "Used by the composer for deterministic routing."
+        ),
+    )
+    calculation_operands: list[CalculationOperand] = Field(
+        default_factory=list,
+        description=(
+            "Ordered operands for the calculation. "
+            "E.g. ratio: [numerator, denominator]; "
+            "pct_change: [base, target]."
+        ),
+    )
+    requires_step_trace: bool = Field(
+        False,
+        description=(
+            "When True, the composer must show step-by-step calculation breakdown in the answer."
+        ),
+    )
+    answer_shape: AnswerShape | None = Field(
+        None,
+        description="Expected shape of the final answer.",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = {"frozen": True}

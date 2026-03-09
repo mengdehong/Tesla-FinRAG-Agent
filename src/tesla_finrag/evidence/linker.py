@@ -7,13 +7,18 @@ set rather than a flat list of unrelated hits.
 When a plan contains period-aware sub-queries, linking validates
 that each required period has adequate coverage and annotates the
 metadata with per-period evidence counts.
+
+Phase C adds *table fallback*: when a required concept is not in the
+XBRL fact store, the linker scans table chunks for matching numeric
+values and creates table-backed :class:`FactRecord` instances.
 """
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from tesla_finrag.models import (
     EvidenceBundle,
@@ -23,6 +28,38 @@ from tesla_finrag.models import (
     TableChunk,
 )
 from tesla_finrag.repositories import CorpusRepository, FactsRepository
+
+# ---------------------------------------------------------------------------
+# Human-readable aliases for table fallback matching
+# ---------------------------------------------------------------------------
+
+# Maps XBRL concepts to human-readable search terms used when scanning
+# table chunk text for matching line items.  Only concepts that are commonly
+# missing from the XBRL fact store need entries here.
+_CONCEPT_TABLE_ALIASES: dict[str, list[str]] = {
+    "us-gaap:CostOfGoodsAndServicesSold": [
+        "cost of automotive revenue",
+        "cost of revenue",
+        "cost of goods sold",
+        "cost of automotive sales",
+        "cost of revenues",
+    ],
+    "us-gaap:ResearchAndDevelopmentExpense": [
+        "research and development",
+        "r&d",
+    ],
+    "us-gaap:SellingGeneralAndAdministrativeExpense": [
+        "selling, general and administrative",
+        "selling general and administrative",
+        "sg&a",
+    ],
+}
+
+# Regex to match dollar values in table cells: e.g. "49,571" or "65,121"
+# or "(49,571)" for negatives.  Captures optional parentheses (negative).
+_TABLE_VALUE_RE = re.compile(
+    r"\(?\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*\)?",
+)
 
 
 class EvidenceLinker:
@@ -36,6 +73,9 @@ class EvidenceLinker:
        period and any required concepts.
     3. For each period, pulling in table chunks from the same filing
        that mention matching metrics.
+    4. **Table fallback** (Phase C): when XBRL facts are missing for a
+       required concept, scan table chunks for matching line items and
+       create table-backed :class:`FactRecord` instances.
 
     This ensures the answer composer sees *all* evidence for a given
     period, not just the top-k retrieval hits.
@@ -84,6 +124,7 @@ class EvidenceLinker:
         required_concepts: list[str] | None = None,
         required_periods: list[date] | None = None,
         period_semantics: dict[str, PeriodSemantics] | None = None,
+        original_query: str | None = None,
     ) -> EvidenceBundle:
         """Enrich an evidence bundle by linking across periods and metrics.
 
@@ -92,6 +133,7 @@ class EvidenceLinker:
             required_concepts: XBRL concepts to look up in the facts store.
             required_periods: If given, restrict linking to these periods.
             period_semantics: Optional period semantics map from the plan.
+            original_query: Original user query for context-sensitive alias matching.
 
         Returns:
             A new :class:`EvidenceBundle` with additional linked evidence.
@@ -140,12 +182,39 @@ class EvidenceLinker:
                     if tbl.chunk_id not in existing_chunk_ids:
                         # Only add tables that mention a required concept
                         if required_concepts and not self._table_mentions_concept(
-                            tbl, required_concepts
+                            tbl,
+                            required_concepts,
+                            original_query=original_query,
                         ):
                             continue
                         table_chunks.append(tbl)
                         existing_chunk_ids.add(tbl.chunk_id)
                         scores[str(tbl.chunk_id)] = 0.0  # linked, not retrieved
+
+        # --- Phase C: Table fallback ---
+        # After normal linking, check for missing concepts and attempt to
+        # extract values from table chunks.
+        table_fallback_count = 0
+        table_fallback_details: list[dict[str, object]] = []
+        if required_concepts and required_periods:
+            for period in required_periods:
+                for concept in required_concepts:
+                    # Skip concepts already resolved via XBRL
+                    if any(f.concept == concept and f.period_end == period for f in facts):
+                        continue
+                    # Attempt table fallback
+                    fallback = self._try_table_fallback(
+                        concept,
+                        period,
+                        table_chunks,
+                        original_query=original_query,
+                    )
+                    if fallback is not None:
+                        fallback_fact, fallback_detail = fallback
+                        facts.append(fallback_fact)
+                        existing_fact_ids.add(fallback_fact.fact_id)
+                        table_fallback_count += 1
+                        table_fallback_details.append(fallback_detail)
 
         # Build per-period coverage for debug metadata
         period_coverage = self._compute_period_coverage(
@@ -182,17 +251,248 @@ class EvidenceLinker:
                 "linked_periods": sorted(str(p) for p in relevant_periods),
                 "linked_facts_count": len(facts) - len(bundle.facts),
                 "linked_tables_count": len(table_chunks) - len(bundle.table_chunks),
+                "table_fallback_count": table_fallback_count,
+                "table_fallback_details": table_fallback_details,
                 "period_coverage": period_coverage,
                 "missing_periods": missing_periods,
                 "missing_concepts_by_period": missing_concepts_by_period,
             },
         )
 
+    # ------------------------------------------------------------------
+    # Table fallback (Phase C)
+    # ------------------------------------------------------------------
+
+    def _try_table_fallback(
+        self,
+        concept: str,
+        period: date,
+        table_chunks: list[TableChunk],
+        *,
+        original_query: str | None = None,
+    ) -> tuple[FactRecord, dict[str, object]] | None:
+        """Attempt to extract a fact value from table chunks.
+
+        Scans table chunks belonging to filings at *period* for rows
+        that mention the concept (using human-readable aliases).
+        Returns a table-backed :class:`FactRecord` on success, or
+        ``None`` if no match is found.
+        """
+        aliases = self._get_table_aliases(concept, original_query=original_query)
+        if not aliases:
+            return None
+
+        for tbl in table_chunks:
+            tbl_period = self._filing_period_end(tbl.doc_id)
+            if tbl_period != period:
+                continue
+            match = self._extract_value_from_table(tbl, aliases, period=period)
+            if match is None:
+                continue
+            value, matched_alias, column_index = match
+            if value is not None:
+                # Tesla tables typically report in millions
+                # We need to determine the scale from table context
+                scale = self._infer_table_scale(tbl)
+                fact = FactRecord(
+                    fact_id=uuid4(),
+                    doc_id=tbl.doc_id,
+                    concept=concept,
+                    label=f"{matched_alias} (table-extracted)",
+                    value=value,
+                    unit="USD",
+                    scale=scale,
+                    period_start=date(period.year, 1, 1),
+                    period_end=period,
+                    is_instant=False,
+                    source_chunk_id=tbl.chunk_id,
+                )
+                detail = {
+                    "concept": concept,
+                    "requested_period": period.isoformat(),
+                    "matched_alias": matched_alias,
+                    "source_chunk_id": str(tbl.chunk_id),
+                    "source_doc_id": str(tbl.doc_id),
+                    "scale": scale,
+                    "raw_value": value,
+                    "column_index": column_index,
+                    "semantic_scope": (
+                        "automotive_only"
+                        if original_query and "automotive" in original_query.lower()
+                        else "general"
+                    ),
+                }
+                return fact, detail
+        return None
+
     @staticmethod
-    def _table_mentions_concept(table: TableChunk, concepts: list[str]) -> bool:
+    def _get_table_aliases(
+        concept: str,
+        *,
+        original_query: str | None = None,
+    ) -> list[str]:
+        """Get human-readable aliases for table matching.
+
+        Uses the configured alias map, falling back to camelCase
+        splitting of the concept's local name.
+        """
+        if concept in _CONCEPT_TABLE_ALIASES:
+            aliases = list(_CONCEPT_TABLE_ALIASES[concept])
+            if (
+                concept == "us-gaap:CostOfGoodsAndServicesSold"
+                and original_query
+                and "automotive" in original_query.lower()
+            ):
+                automotive_aliases = [a for a in aliases if "automotive" in a]
+                return automotive_aliases or aliases
+            return aliases
+
+        # Fallback: split camelCase
+        label = concept.split(":")[-1] if ":" in concept else concept
+        words: list[str] = []
+        current: list[str] = []
+        for ch in label:
+            if ch.isupper() and current:
+                words.append("".join(current).lower())
+                current = [ch]
+            else:
+                current.append(ch)
+        if current:
+            words.append("".join(current).lower())
+        human_label = " ".join(words)
+        return [human_label]
+
+    @staticmethod
+    def _extract_value_from_table(
+        table: TableChunk,
+        aliases: list[str],
+        *,
+        period: date | None = None,
+    ) -> tuple[float, str, int | None] | None:
+        """Extract a numeric value from a table chunk matching any alias.
+
+        Searches row-by-row for a row whose first cell matches one of
+        the aliases, then returns the matching numeric value.
+        """
+        for row in table.rows:
+            if not row:
+                continue
+            row_label = row[0].strip().lower()
+            matched_alias = next((alias for alias in aliases if alias.lower() in row_label), None)
+            if matched_alias is None:
+                # Also check if the alias appears in a combined row text
+                row_text = " ".join(cell.strip().lower() for cell in row)
+                matched_alias = next(
+                    (alias for alias in aliases if alias.lower() in row_text),
+                    None,
+                )
+
+            if matched_alias:
+                target_column = EvidenceLinker._column_index_for_period(table, row, period)
+                if target_column is not None and target_column < len(row):
+                    parsed = EvidenceLinker._parse_table_cell_value(row[target_column])
+                    if parsed is not None:
+                        return parsed, matched_alias, target_column
+
+                numeric_cells: list[tuple[int, float]] = []
+                for index, cell in enumerate(row[1:], start=1):
+                    parsed = EvidenceLinker._parse_table_cell_value(cell)
+                    if parsed is not None:
+                        numeric_cells.append((index, parsed))
+
+                if period is None and numeric_cells:
+                    index, parsed = numeric_cells[0]
+                    return parsed, matched_alias, index
+
+                if len(numeric_cells) == 1:
+                    index, parsed = numeric_cells[0]
+                    return parsed, matched_alias, index
+        return None
+
+    @staticmethod
+    def _parse_table_cell_value(cell: str) -> float | None:
+        """Parse a numeric table cell, preserving negatives in parentheses."""
+        stripped = cell.strip()
+        if not stripped:
+            return None
+        match = _TABLE_VALUE_RE.search(stripped)
+        if match is None:
+            return None
+        raw = match.group(1).replace(",", "")
+        try:
+            value = float(raw)
+        except ValueError:
+            return None
+        if stripped.startswith("(") and stripped.endswith(")"):
+            return -value
+        if stripped.startswith("-"):
+            return -value
+        return value
+
+    @staticmethod
+    def _column_index_for_period(
+        table: TableChunk,
+        row: list[str],
+        period: date | None,
+    ) -> int | None:
+        """Return the row cell index that matches the requested period."""
+        if period is None:
+            return None
+
+        target_year = str(period.year)
+        header_sources: list[tuple[list[str], bool]] = []
+        if table.headers:
+            header_sources.append((table.headers, False))
+        if table.rows:
+            first_row = table.rows[0]
+            if any(target_year in cell for cell in first_row):
+                header_sources.append((first_row, True))
+
+        for header_row, includes_label_column in header_sources:
+            for index, cell in enumerate(header_row):
+                searchable = cell.lower()
+                if target_year not in searchable:
+                    continue
+                if includes_label_column:
+                    return index
+                return index + 1
+        return None
+
+    @staticmethod
+    def _infer_table_scale(table: TableChunk) -> int:
+        """Infer the numeric scale from a table's caption/headers.
+
+        Tesla tables typically state "in millions" in the caption.
+        Returns the multiplier (e.g. 1_000_000 for millions).
+        """
+        searchable = f"{table.caption} {' '.join(table.headers)}".lower()
+        if "in millions" in searchable:
+            return 1_000_000
+        if "in thousands" in searchable:
+            return 1_000
+        if "in billions" in searchable:
+            return 1_000_000_000
+        # Default: assume raw values (no scale)
+        return 1
+
+    @staticmethod
+    def _table_mentions_concept(
+        table: TableChunk,
+        concepts: list[str],
+        *,
+        original_query: str | None = None,
+    ) -> bool:
         """Check if a table chunk's text mentions any of the concepts."""
         searchable = f"{table.caption} {table.raw_text} {' '.join(table.headers)}".lower()
         for concept in concepts:
+            # Check against configured aliases first
+            aliases = EvidenceLinker._get_table_aliases(
+                concept,
+                original_query=original_query,
+            )
+            for alias in aliases:
+                if alias.lower() in searchable:
+                    return True
             # Extract the human-readable part of the concept name
             label = concept.split(":")[-1] if ":" in concept else concept
             # Convert camelCase to space-separated words for matching

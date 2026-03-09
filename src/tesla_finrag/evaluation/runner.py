@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import re
 import sys
 import time
 from collections.abc import Callable
@@ -28,11 +30,14 @@ from .models import (
     BenchmarkQuestion,
     EvaluationRun,
     FailureAnalysis,
+    JudgeBreakdown,
     QuestionResult,
     ResultStatus,
     RunSummary,
 )
 from .workbench import get_workbench_pipeline
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -202,19 +207,40 @@ class EvaluationRunner:
     # ------------------------------------------------------------------
 
     def _run_single(self, q: BenchmarkQuestion) -> QuestionResult:
-        """Run a single question through the pipeline."""
+        """Run a single question through the pipeline with dual-track judging.
+
+        Both legacy (keyword-contains) and structured (assertion-based)
+        judges run independently.  The primary ``passed`` field is
+        determined by ``structured_passed`` when available, falling back
+        to ``legacy_passed`` when no structured assertions are configured.
+        """
         try:
             start = time.monotonic()
             answer = self._pipeline(q.question)
             elapsed_ms = (time.monotonic() - start) * 1000.0
 
-            passed = self._check_answer(q, answer)
+            # Legacy judge (always runs for comparison)
+            legacy_passed = self._legacy_check(q, answer)
+
+            # Structured judge (runs when question has assertions)
+            structured_passed, judge_breakdown = self._structured_check(q, answer)
+
+            # Dual-track decision: structured takes priority when available
+            if structured_passed is not None:
+                passed = structured_passed
+            else:
+                passed = legacy_passed
+
             return QuestionResult(
                 question_id=q.question_id,
                 answer_status=answer.status,
                 answer_text=answer.answer_text,
                 latency_ms=round(elapsed_ms, 2),
                 passed=passed,
+                legacy_passed=legacy_passed,
+                structured_passed=structured_passed,
+                judge_breakdown=judge_breakdown,
+                retrieval_debug=answer.retrieval_debug,
             )
         except ProcessedCorpusError:
             # Processed-corpus bootstrap failures are startup problems, not
@@ -232,14 +258,298 @@ class EvaluationRunner:
             )
 
     @staticmethod
-    def _check_answer(q: BenchmarkQuestion, answer: AnswerPayload) -> bool:
-        """Check whether the answer contains all expected key phrases."""
+    def _legacy_check(q: BenchmarkQuestion, answer: AnswerPayload) -> bool:
+        """Check whether the answer contains all expected key phrases (legacy judge)."""
         if answer.status != AnswerStatus.OK:
             return False
         if not q.expected_answer_contains:
             return len(answer.citations) > 0
         lower = answer.answer_text.lower()
         return all(kw.lower() in lower for kw in q.expected_answer_contains)
+
+    # ------------------------------------------------------------------
+    # Structured judge
+    # ------------------------------------------------------------------
+
+    # Pattern to extract numbers from answer text.
+    # Matches: 96,773,000,000.00  |  18.80  |  -5.23  |  1234
+    _NUMBER_RE = re.compile(r"-?[\d,]+\.?\d*")
+    # Known concept-equivalence groups for structured fact assertions.
+    # Keep this list intentionally small and explicit to avoid over-relaxing
+    # benchmark correctness criteria.
+    _FACT_EQUIVALENCE_GROUPS: tuple[frozenset[str], ...] = (
+        frozenset(
+            {
+                "us-gaap:CostOfGoodsAndServicesSold",
+                "us-gaap:CostOfRevenue",
+            }
+        ),
+    )
+    _OPERATION_COMPATIBILITY: dict[str, set[str]] = {
+        "lookup": {"lookup", "step_trace"},
+        "ratio": {"ratio"},
+        "pct_change": {"pct_change"},
+        "difference": {"difference"},
+        "rank": {"rank"},
+    }
+
+    @staticmethod
+    def _extract_numbers(text: str) -> list[float]:
+        """Extract all numeric values from *text*.
+
+        Handles comma-separated thousands (``96,773,000,000.00``) and
+        negative values.  Returns an empty list when no numbers are found.
+        """
+        results: list[float] = []
+        for match in EvaluationRunner._NUMBER_RE.finditer(text):
+            raw = match.group().replace(",", "")
+            try:
+                results.append(float(raw))
+            except ValueError:
+                continue
+        return results
+
+    @staticmethod
+    def _fact_concept_matches(expected_concept: str, retrieved_concepts: set[str]) -> bool:
+        """Return whether *expected_concept* is satisfied by retrieved concepts.
+
+        Supports exact match plus a small set of explicit concept-equivalence
+        groups for SEC taxonomy variants.
+        """
+        if expected_concept in retrieved_concepts:
+            return True
+        for group in EvaluationRunner._FACT_EQUIVALENCE_GROUPS:
+            if expected_concept in group and group.intersection(retrieved_concepts):
+                return True
+        return False
+
+    @staticmethod
+    def _operation_matches(expected_operation: str, actual_operation: str | None) -> bool:
+        """Return whether the actual calculation intent satisfies the expected operation."""
+        if actual_operation is None:
+            return False
+        allowed = EvaluationRunner._OPERATION_COMPATIBILITY.get(
+            expected_operation,
+            {expected_operation},
+        )
+        return actual_operation in allowed
+
+    @staticmethod
+    def _structured_check(
+        q: BenchmarkQuestion,
+        answer: AnswerPayload,
+    ) -> tuple[bool | None, JudgeBreakdown | None]:
+        """Run structured assertion judge.
+
+        Returns ``(passed, breakdown)`` when the question has structured
+        assertions, or ``(None, None)`` when no structured assertions are
+        configured — signalling the runner to fall back to legacy judge.
+
+        The judge evaluates five independent assertion axes:
+
+        1. **Status assertion** — ``answer.status`` must equal
+           ``q.expected_status`` (when set).
+        2. **Facts assertion** — every concept in ``q.expected_facts``
+           must appear in
+           ``answer.retrieval_debug["retrieved_fact_concepts"]``.
+        3. **Period facts assertion** — for questions with both
+           ``expected_facts`` and ``required_periods``, each required
+           period must have concept coverage in
+           ``answer.retrieval_debug["fact_concepts_by_period"]`` and
+           must not appear in ``answer.retrieval_debug["missing_periods"]``.
+        4. **Calculation assertion** — a numeric value in the answer
+           text must match ``q.expected_calc.expected_value`` within
+           the configured tolerance.
+        5. **Operation assertion** — ``expected_calc.operation`` must
+           match ``answer.retrieval_debug["calculation_intent"]`` under
+           the configured compatibility rules.
+
+        All configured assertions must pass for the question to pass.
+        """
+        if not q.has_structured_assertions:
+            return None, None
+
+        # --- 1. Status assertion ---
+        if q.expected_status is not None:
+            status_ok = answer.status == q.expected_status
+        else:
+            # No explicit status requirement: accept any non-error status.
+            status_ok = answer.status != AnswerStatus.CALCULATION_ERROR
+
+        # --- 2. Facts assertion ---
+        retrieved_concepts: list[str] = answer.retrieval_debug.get("retrieved_fact_concepts", [])
+        retrieved_set = set(retrieved_concepts)
+        facts_found: list[str] = []
+        facts_missing: list[str] = []
+        for concept in q.expected_facts:
+            if EvaluationRunner._fact_concept_matches(concept, retrieved_set):
+                facts_found.append(concept)
+            else:
+                facts_missing.append(concept)
+        facts_ok = len(facts_missing) == 0
+
+        # --- 3. Period facts assertion ---
+        period_facts_ok: bool | None = None
+        periods_missing_facts: list[str] = []
+        facts_missing_by_period: dict[str, list[str]] = {}
+
+        if q.expected_facts and q.required_periods:
+            period_facts_ok = True
+            missing_periods = {
+                str(period) for period in answer.retrieval_debug.get("missing_periods", [])
+            }
+            raw_fact_concepts_by_period = answer.retrieval_debug.get("fact_concepts_by_period", {})
+            fact_concepts_by_period = (
+                raw_fact_concepts_by_period if isinstance(raw_fact_concepts_by_period, dict) else {}
+            )
+
+            for period in q.required_periods:
+                period_key = str(period)
+                period_concepts_raw = fact_concepts_by_period.get(period_key, [])
+                period_concepts = (
+                    {str(concept) for concept in period_concepts_raw}
+                    if isinstance(period_concepts_raw, list)
+                    else set()
+                )
+                period_missing = [
+                    concept
+                    for concept in q.expected_facts
+                    if not EvaluationRunner._fact_concept_matches(concept, period_concepts)
+                ]
+
+                if period_key in missing_periods or period_missing:
+                    period_facts_ok = False
+                    periods_missing_facts.append(period_key)
+                    facts_missing_by_period[period_key] = (
+                        period_missing if period_missing else list(q.expected_facts)
+                    )
+
+        # --- 4. Calculation assertion ---
+        calc_correct: bool | None = None
+        calc_detail = ""
+        operation_ok: bool | None = None
+        operation_detail = ""
+
+        if q.expected_calc is not None:
+            ec = q.expected_calc
+            actual_operation_raw = answer.retrieval_debug.get("calculation_intent")
+            if actual_operation_raw is None:
+                actual_operation = None
+            elif hasattr(actual_operation_raw, "value"):
+                actual_operation = str(actual_operation_raw.value).lower()
+            else:
+                actual_operation = str(actual_operation_raw).lower()
+            expected_operation = ec.operation.value
+            operation_ok = EvaluationRunner._operation_matches(
+                expected_operation=expected_operation,
+                actual_operation=actual_operation,
+            )
+            if actual_operation is None:
+                operation_detail = (
+                    "Missing calculation_intent in retrieval_debug while "
+                    "expected_calc is configured."
+                )
+            else:
+                operation_detail = (
+                    f"Expected operation={expected_operation}, actual={actual_operation} → "
+                    f"{'PASS' if operation_ok else 'FAIL'}"
+                )
+
+            if ec.expected_value is not None:
+                # Extract numbers from answer text + calculation trace
+                search_text = answer.answer_text
+                if answer.calculation_trace:
+                    search_text += " " + " ".join(answer.calculation_trace)
+
+                candidates = EvaluationRunner._extract_numbers(search_text)
+
+                if not candidates:
+                    calc_correct = False
+                    calc_detail = (
+                        f"No numeric values found in answer text. Expected ≈{ec.expected_value}"
+                    )
+                else:
+                    # Check if any extracted number matches within tolerance.
+                    # Use relative tolerance: |actual - expected| / |expected| <= tol
+                    expected = ec.expected_value
+                    tol = ec.tolerance
+                    best_match: float | None = None
+                    best_rel_error = float("inf")
+
+                    for candidate in candidates:
+                        if expected == 0:
+                            rel_error = abs(candidate)
+                        else:
+                            rel_error = abs(candidate - expected) / abs(expected)
+                        if rel_error < best_rel_error:
+                            best_rel_error = rel_error
+                            best_match = candidate
+
+                    calc_correct = best_rel_error <= tol
+                    calc_detail = (
+                        f"Expected ≈{expected}, best match = {best_match}, "
+                        f"rel_error = {best_rel_error:.6f}, "
+                        f"tolerance = {tol} → "
+                        f"{'PASS' if calc_correct else 'FAIL'}"
+                    )
+            else:
+                # Operation type check only — no numeric assertion.
+                # The question asserts the operation type but not a specific
+                # value (e.g. rank questions).
+                calc_correct = True
+                calc_detail = (
+                    f"Operation type assertion only: {ec.operation.value}. "
+                    f"No expected_value to verify."
+                )
+
+        # --- 4. Narrative cue assertion ---
+        answer_lower = answer.answer_text.lower()
+        narrative_terms_found: list[str] = []
+        narrative_terms_missing: list[str] = []
+        for term in q.expected_narrative_terms:
+            if term.lower() in answer_lower:
+                narrative_terms_found.append(term)
+            else:
+                narrative_terms_missing.append(term)
+        narrative_ok = len(narrative_terms_missing) == 0
+
+        # --- Overall pass/fail ---
+        passed = status_ok and facts_ok and narrative_ok
+        if period_facts_ok is not None:
+            passed = passed and period_facts_ok
+        if calc_correct is not None:
+            passed = passed and calc_correct
+        if operation_ok is not None:
+            passed = passed and operation_ok
+
+        breakdown = JudgeBreakdown(
+            status_ok=status_ok,
+            facts_found=facts_found,
+            facts_missing=facts_missing,
+            period_facts_ok=period_facts_ok,
+            periods_missing_facts=periods_missing_facts,
+            facts_missing_by_period=facts_missing_by_period,
+            calc_correct=calc_correct,
+            calc_detail=calc_detail,
+            operation_ok=operation_ok,
+            operation_detail=operation_detail,
+            narrative_terms_found=narrative_terms_found,
+            narrative_terms_missing=narrative_terms_missing,
+        )
+
+        logger.debug(
+            "Structured judge for %s: status_ok=%s, facts_ok=%s, period_facts_ok=%s, "
+            "operation_ok=%s, calc_correct=%s → passed=%s",
+            q.question_id,
+            status_ok,
+            facts_ok,
+            period_facts_ok,
+            operation_ok,
+            calc_correct,
+            passed,
+        )
+
+        return passed, breakdown
 
     @staticmethod
     def _summarize(results: list[QuestionResult]) -> RunSummary:
@@ -297,7 +607,21 @@ def main(argv: list[str] | None = None) -> None:
     print("\nResults:")
     for r in run.results:
         mark = "PASS" if r.passed else "FAIL"
-        print(f"  [{mark}] {r.question_id}: {r.answer_status} ({r.latency_ms:.0f}ms)")
+        # Show dual-track comparison when both judges ran
+        dual = ""
+        if r.legacy_passed is not None and r.structured_passed is not None:
+            l_mark = "P" if r.legacy_passed else "F"
+            s_mark = "P" if r.structured_passed else "F"
+            dual = f" [legacy={l_mark} struct={s_mark}]"
+        elif r.legacy_passed is not None:
+            dual = " [legacy-only]"
+        print(f"  [{mark}] {r.question_id}: {r.answer_status} ({r.latency_ms:.0f}ms){dual}")
+        if r.judge_breakdown and not r.judge_breakdown.status_ok:
+            print(f"         Status mismatch: got {r.answer_status}")
+        if r.judge_breakdown and r.judge_breakdown.facts_missing:
+            print(f"         Missing facts: {', '.join(r.judge_breakdown.facts_missing)}")
+        if r.judge_breakdown and r.judge_breakdown.calc_detail:
+            print(f"         Calc: {r.judge_breakdown.calc_detail}")
         if r.notes:
             print(f"         Note: {r.notes}")
 

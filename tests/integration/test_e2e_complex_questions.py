@@ -98,6 +98,27 @@ class TestRevenueComparisonE2E:
         assert "81,462" in trace_text or "81462" in trace_text
         assert "96,773" in trace_text or "96773" in trace_text
 
+    def test_chinese_annual_revenue_comparison(
+        self,
+        planner: RuleBasedQueryPlanner,
+        retrieval_service: HybridRetrievalService,
+        composer: GroundedAnswerComposer,
+    ) -> None:
+        """Chinese equivalent query should produce the same grounded comparison."""
+        plan, bundle, answer = _run_full_pipeline(
+            "比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？",
+            planner,
+            retrieval_service,
+            composer,
+        )
+        assert date(2022, 12, 31) in plan.required_periods
+        assert date(2023, 12, 31) in plan.required_periods
+        assert answer.status == AnswerStatus.OK
+        assert answer.answer_text.startswith("根据 Tesla SEC 财报：")
+        trace_text = "\n".join(answer.calculation_trace)
+        assert "81,462" in trace_text or "81462" in trace_text
+        assert "96,773" in trace_text or "96773" in trace_text
+
 
 class TestProfitabilityMetricsE2E:
     """Questions about margins, profits, and operating metrics."""

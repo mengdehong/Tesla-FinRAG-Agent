@@ -14,6 +14,7 @@ from tesla_finrag.models import (
     AnswerShape,
     CalculationIntent,
     CalculationOperand,
+    QueryLanguage,
 )
 from tesla_finrag.planning.query_planner import (
     RuleBasedQueryPlanner,
@@ -22,7 +23,9 @@ from tesla_finrag.planning.query_planner import (
     _infer_answer_shape,
     _infer_calculation_intent,
     _infer_margin_intent,
+    detect_query_language,
     extract_metrics,
+    extract_periods,
 )
 
 # ===================================================================
@@ -65,6 +68,14 @@ class TestPseudoConceptRemoval:
         """Ensure 'operating income' still maps correctly."""
         metrics = extract_metrics("Show operating income for FY2022")
         assert "us-gaap:OperatingIncomeLoss" in metrics
+
+    def test_chinese_revenue_metric_supported(self):
+        metrics = extract_metrics("比较 FY2022 和 FY2023 的总营收，同比增长率是多少？")
+        assert metrics == ["us-gaap:Revenues"]
+
+    def test_chinese_margin_metric_supported(self):
+        metrics = extract_metrics("特斯拉2023财年的毛利率是多少？")
+        assert "us-gaap:GrossProfit" in metrics
 
 
 # ===================================================================
@@ -198,6 +209,16 @@ class TestStepTraceDetection:
     )
     def test_step_trace_not_detected(self, question: str):
         assert _detect_step_trace(question) is False
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "请展示毛利润除以总营收的计算过程。",
+            "请逐步说明自由现金流的计算过程。",
+        ],
+    )
+    def test_step_trace_detected_for_chinese(self, question: str):
+        assert _detect_step_trace(question) is True
 
 
 # ===================================================================
@@ -346,6 +367,15 @@ class TestCalculationIntentInference:
             margin_intent=CalculationIntent.RATIO,
         )
         assert intent == CalculationIntent.RATIO
+
+    def test_pct_change_chinese(self):
+        intent = _infer_calculation_intent(
+            "比较 FY2022 和 FY2023 的总营收，同比增长率是多少？",
+            ["us-gaap:Revenues"],
+            [date(2022, 12, 31), date(2023, 12, 31)],
+            margin_intent=None,
+        )
+        assert intent == CalculationIntent.PCT_CHANGE
 
 
 # ===================================================================
@@ -520,6 +550,57 @@ class TestPlannerIntentIntegration:
             "subtrahend",
             "result",
         }
+
+
+class TestChinesePlannerSupport:
+    def test_detect_query_language(self):
+        assert detect_query_language("What was Tesla revenue in FY2023?") == QueryLanguage.ENGLISH
+        assert detect_query_language("特斯拉2023财年的营收是多少？") == QueryLanguage.CHINESE
+        assert detect_query_language("比较 Tesla FY2022 和 FY2023 的总营收") == QueryLanguage.MIXED
+
+    def test_extract_periods_supports_chinese_fiscal_year_and_quarters(self):
+        periods = extract_periods("比较2023年Q1、Q2、Q3的营业利润，哪个季度最高？")
+        assert periods == [
+            date(2023, 3, 31),
+            date(2023, 6, 30),
+            date(2023, 9, 30),
+        ]
+
+    def test_extract_periods_supports_chinese_as_of_date(self):
+        periods = extract_periods("截至2023年12月31日，特斯拉的现金及现金等价物是多少？")
+        assert periods == [date(2023, 12, 31)]
+
+    def test_planner_normalizes_chinese_numeric_query(self):
+        planner = RuleBasedQueryPlanner()
+        plan = planner.plan("比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？")
+        assert plan.query_language == QueryLanguage.MIXED
+        assert plan.calculation_intent == CalculationIntent.PCT_CHANGE
+        assert plan.answer_shape == AnswerShape.COMPARISON
+        assert plan.required_periods == [date(2022, 12, 31), date(2023, 12, 31)]
+        assert plan.required_concepts == ["us-gaap:Revenues"]
+        assert "revenue" in plan.normalized_query
+        assert "growth rate" in plan.normalized_query
+        assert len(plan.sub_queries) == 2
+        assert all("FY202" in sq.search_text for sq in plan.sub_queries)
+
+    def test_planner_normalizes_chinese_narrative_query(self):
+        planner = RuleBasedQueryPlanner()
+        plan = planner.plan("2023年10-K里提到了哪些供应链风险因素？")
+        assert plan.query_language == QueryLanguage.MIXED
+        assert plan.query_type.value == "narrative_compare"
+        assert plan.required_periods == [date(2023, 12, 31)]
+        assert plan.required_concepts == []
+        assert "supply chain" in plan.normalized_query
+        assert "risk factors" in plan.normalized_query
+
+    def test_planner_handles_chinese_margin_ranking(self):
+        planner = RuleBasedQueryPlanner()
+        plan = planner.plan("比较2023年Q1、Q2、Q3的营业利润，哪个季度营业利润率最高？")
+        assert plan.calculation_intent == CalculationIntent.RANK
+        assert plan.answer_shape == AnswerShape.RANKING
+        assert "us-gaap:OperatingIncomeLoss" in plan.required_concepts
+        assert "us-gaap:Revenues" in plan.required_concepts
+        assert len([o for o in plan.calculation_operands if o.role == "numerator"]) == 3
 
     def test_bq008_simple_revenue_lookup(self):
         """BQ-008: simple revenue lookup → LOOKUP + SINGLE_VALUE."""

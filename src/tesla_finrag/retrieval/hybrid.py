@@ -77,6 +77,18 @@ def _reciprocal_rank_fusion(
     return fused
 
 
+def _ordered_unique(parts: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for part in parts:
+        normalized = part.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
+
+
 class HybridRetrievalService(RetrievalService):
     """Concrete retrieval service that combines lexical and vector search.
 
@@ -139,12 +151,12 @@ class HybridRetrievalService(RetrievalService):
 
     def _build_query_text(self, plan: QueryPlan) -> str:
         """Build the search query text from the plan."""
-        parts = [plan.original_query]
+        parts = [plan.normalized_query or plan.original_query]
         if plan.retrieval_keywords:
             parts.extend(plan.retrieval_keywords)
         if plan.required_concepts:
             parts.extend(plan.required_concepts)
-        return " ".join(parts)
+        return " ".join(_ordered_unique(parts))
 
     def _resolve_chunks(
         self, fused: list[RetrievalResult]
@@ -292,6 +304,9 @@ class HybridRetrievalService(RetrievalService):
                 "vector_hits": len(vector_results),
                 "fact_hits": len(facts),
                 "fused_hits": len(fused),
+                "original_query_text": plan.original_query,
+                "normalized_query_text": plan.normalized_query,
+                "query_language": plan.query_language,
                 "query_text": self._build_query_text(plan),
                 "doc_id_filter": [str(d) for d in (self._get_doc_ids_for_plan(plan) or [])],
                 "retrieval_mode": "single_pass",
@@ -320,7 +335,7 @@ class HybridRetrievalService(RetrievalService):
             scope_miss = sq.target_period is not None and doc_ids == []
 
             # Build focused query text from sub-query
-            query_text = sq.text
+            query_text = sq.search_text or sq.text
 
             # --- Lexical ---
             if scope_miss:
@@ -368,12 +383,20 @@ class HybridRetrievalService(RetrievalService):
                     all_facts.append(fact)
 
             period_key = sq.target_period.isoformat() if sq.target_period else "none"
-            per_period_meta[period_key] = {
+            meta_key = (
+                period_key
+                if period_key not in per_period_meta
+                else f"{period_key}:{sq.sub_query_id}"
+            )
+            per_period_meta[meta_key] = {
+                "target_period": period_key,
                 "lexical_hits": len(lexical_results),
                 "vector_hits": len(vector_results),
                 "fact_hits": len(period_facts),
                 "fused_hits": len(fused),
                 "query_text": query_text,
+                "original_sub_query_text": sq.text,
+                "sub_query_search_text": sq.search_text,
                 "doc_id_filter": [str(d) for d in (doc_ids or [])],
                 "scope_miss": scope_miss,
             }
@@ -387,6 +410,9 @@ class HybridRetrievalService(RetrievalService):
             metadata={
                 "retrieval_mode": "per_period",
                 "sub_query_count": len(plan.sub_queries),
+                "original_query_text": plan.original_query,
+                "normalized_query_text": plan.normalized_query,
+                "query_language": plan.query_language,
                 "per_period": per_period_meta,
                 "fact_hits": len(all_facts),
                 "fused_hits": sum(m.get("fused_hits", 0) for m in per_period_meta.values()),

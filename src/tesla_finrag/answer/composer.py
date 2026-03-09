@@ -33,6 +33,7 @@ from tesla_finrag.models import (
     EvidenceBundle,
     FactRecord,
     PeriodSemantics,
+    QueryLanguage,
     QueryPlan,
     QueryType,
 )
@@ -172,7 +173,7 @@ class GroundedAnswerComposer(AnswerService):
 
         # Step 5: Compose answer text
         if limitation_reasons:
-            answer_text = self._compose_limitation_text(limitation_reasons)
+            answer_text = self._compose_limitation_text(plan, limitation_reasons)
         elif is_composite and numeric_limitation_reasons:
             # Composite partial answer: narrative + numeric limitation
             answer_text = self._compose_composite_text(
@@ -539,8 +540,47 @@ class GroundedAnswerComposer(AnswerService):
 
     @staticmethod
     def _display_ratio_as_percent(plan: QueryPlan) -> bool:
-        lower = plan.original_query.lower()
+        lower = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
         return "margin" in lower or "percent" in lower or "percentage" in lower
+
+    @staticmethod
+    def _prefers_chinese(plan: QueryPlan) -> bool:
+        return plan.query_language in (QueryLanguage.CHINESE, QueryLanguage.MIXED)
+
+    def _sec_filings_intro(self, plan: QueryPlan) -> str:
+        if self._prefers_chinese(plan):
+            return "根据 Tesla SEC 财报：\n"
+        return "Based on Tesla's SEC filings:\n"
+
+    def _financial_statements_intro(self, plan: QueryPlan) -> str:
+        if self._prefers_chinese(plan):
+            return "来自 Tesla 财务报表：\n"
+        return "From Tesla's financial statements:\n"
+
+    def _result_line(self, plan: QueryPlan, value: float) -> str:
+        if self._prefers_chinese(plan):
+            return f"\n结果: {value:,.2f}"
+        return f"\nResult: {value:,.2f}"
+
+    def _insufficient_evidence_message(self, plan: QueryPlan) -> str:
+        if self._prefers_chinese(plan):
+            return "未找到足够证据来回答这个问题。现有财报数据可能不包含相关信息。"
+        return (
+            "Insufficient evidence found to answer this question. "
+            "The available filing data may not contain the relevant information."
+        )
+
+    def _insufficient_numeric_message(self, plan: QueryPlan) -> str:
+        if self._prefers_chinese(plan):
+            return (
+                "未找到足够的可落地数字证据来回答这个问题。"
+                "现有财报数据中缺少所请求指标的可靠数值事实。"
+            )
+        return (
+            "Insufficient evidence found to answer this question. "
+            "The available filing data did not contain grounded numeric facts "
+            "for the requested metric."
+        )
 
     @staticmethod
     def _period_order_for_lookup(plan: QueryPlan) -> list[date | None]:
@@ -887,39 +927,33 @@ class GroundedAnswerComposer(AnswerService):
         """Compose the answer text from evidence and calculations."""
         total_evidence = len(bundle.section_chunks) + len(bundle.table_chunks) + len(bundle.facts)
         if total_evidence == 0 and not calc_trace:
-            return (
-                "Insufficient evidence found to answer this question. "
-                "The available filing data may not contain the relevant information."
-            )
+            return self._insufficient_evidence_message(plan)
         if plan.needs_calculation and plan.required_concepts:
             matching_concepts = self._required_fact_matches(plan, bundle)
             if not matching_concepts:
-                return (
-                    "Insufficient evidence found to answer this question. "
-                    "The available filing data did not contain grounded numeric facts "
-                    "for the requested metric."
-                )
+                return self._insufficient_numeric_message(plan)
 
         parts: list[str] = []
 
         if plan.query_type == QueryType.NUMERIC_CALCULATION and calc_trace:
             # Lead with the calculation result
-            parts.append("Based on Tesla's SEC filings:\n")
+            parts.append(self._sec_filings_intro(plan))
             for line in calc_trace:
                 parts.append(line)
             if calc_result is not None:
-                parts.append(f"\nResult: {calc_result:,.2f}")
+                parts.append(self._result_line(plan, calc_result))
 
         elif plan.query_type == QueryType.TABLE_LOOKUP and bundle.table_chunks:
-            parts.append("From Tesla's financial statements:\n")
+            parts.append(self._financial_statements_intro(plan))
             for chunk in bundle.table_chunks[:3]:
                 if chunk.caption:
-                    parts.append(f"Table: {chunk.caption}")
+                    label = "表格" if self._prefers_chinese(plan) else "Table"
+                    parts.append(f"{label}: {chunk.caption}")
                 if chunk.raw_text:
                     parts.append(chunk.raw_text[:500])
 
         elif plan.query_type == QueryType.NARRATIVE_COMPARE and bundle.section_chunks:
-            parts.append("From Tesla's SEC filings:\n")
+            parts.append(self._sec_filings_intro(plan))
             for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
                 excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
                 parts.append(f"[{chunk.section_title}] {excerpt}")
@@ -927,7 +961,7 @@ class GroundedAnswerComposer(AnswerService):
         else:
             # Hybrid: combine narrative and facts
             if calc_trace or bundle.section_chunks:
-                parts.append("Based on Tesla's SEC filings:\n")
+                parts.append(self._sec_filings_intro(plan))
             if calc_trace:
                 for line in calc_trace:
                     parts.append(line)
@@ -936,10 +970,7 @@ class GroundedAnswerComposer(AnswerService):
                 parts.append(f"\n[{chunk.section_title}] {excerpt}")
 
         if not parts:
-            parts.append(
-                "Insufficient evidence found to answer this question. "
-                "The available filing data may not contain the relevant information."
-            )
+            parts.append(self._insufficient_evidence_message(plan))
 
         return "\n".join(parts)
 
@@ -956,7 +987,7 @@ class GroundedAnswerComposer(AnswerService):
         Includes available narrative evidence and any calculation results,
         followed by a limitation note for the numeric lane if it failed.
         """
-        parts: list[str] = ["Based on Tesla's SEC filings:\n"]
+        parts: list[str] = [self._sec_filings_intro(plan)]
 
         # Narrative lane: include section chunks
         for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=3):
@@ -969,22 +1000,25 @@ class GroundedAnswerComposer(AnswerService):
             for line in calc_trace:
                 parts.append(line)
             if calc_result is not None:
-                parts.append(f"\nResult: {calc_result:,.2f}")
+                parts.append(self._result_line(plan, calc_result))
         elif numeric_limitations:
             # Numeric lane failed — add limitation note
             parts.append("")
-            parts.append(
-                "Note: The numeric component of this question could not be "
-                "fully grounded from the available financial data."
-            )
+            if self._prefers_chinese(plan):
+                parts.append("说明：这个问题中的数值部分无法基于现有财报数据被完整落地。")
+            else:
+                parts.append(
+                    "Note: The numeric component of this question could not be "
+                    "fully grounded from the available financial data."
+                )
             for reason in numeric_limitations:
                 parts.append(f"  - {reason}")
 
         return "\n".join(parts)
 
     @staticmethod
-    def _narrative_cues_from_query(query: str) -> list[str]:
-        lower = query.lower()
+    def _narrative_cues_from_query(plan: QueryPlan) -> list[str]:
+        lower = f"{plan.original_query.lower()} {plan.normalized_query.lower()}"
         cues: list[str] = []
         for cue in (
             "supply chain",
@@ -995,6 +1029,9 @@ class GroundedAnswerComposer(AnswerService):
             "logistics",
             "semiconductor",
             "geopolitical",
+            "macro environment",
+            "china market",
+            "capacity bottleneck",
         ):
             if cue in lower:
                 cues.append(cue)
@@ -1010,7 +1047,7 @@ class GroundedAnswerComposer(AnswerService):
         """Prioritize section chunks that match narrative cues in the query."""
         if not chunks:
             return []
-        cues = self._narrative_cues_from_query(plan.original_query)
+        cues = self._narrative_cues_from_query(plan)
         if not cues:
             return chunks[:limit]
 
@@ -1033,7 +1070,7 @@ class GroundedAnswerComposer(AnswerService):
         if len(text) <= max_chars:
             return text
         lower = text.lower()
-        for cue in self._narrative_cues_from_query(plan.original_query):
+        for cue in self._narrative_cues_from_query(plan):
             pos = lower.find(cue)
             if pos == -1:
                 continue
@@ -1075,15 +1112,21 @@ class GroundedAnswerComposer(AnswerService):
 
         return AnswerStatus.OK, round(confidence, 2)
 
-    @staticmethod
-    def _compose_limitation_text(reasons: list[str]) -> str:
+    def _compose_limitation_text(
+        self,
+        plan: QueryPlan,
+        reasons: list[str],
+    ) -> str:
         """Compose a user-facing limitation message from a list of reasons.
 
         The text clearly states that the answer cannot be grounded and
         enumerates each specific limitation so the caller can understand
         what evidence was missing or incompatible.
         """
-        header = "Unable to provide a fully grounded answer for this question."
+        if self._prefers_chinese(plan):
+            header = "无法基于现有证据为这个问题提供完全有依据的答案。"
+        else:
+            header = "Unable to provide a fully grounded answer for this question."
         if len(reasons) == 1:
             return f"{header} {reasons[0]}"
         bullet_lines = "\n".join(f"- {r}" for r in reasons)

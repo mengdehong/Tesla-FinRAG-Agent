@@ -1,10 +1,5 @@
-# grounded-financial-qa Specification
+## MODIFIED Requirements
 
-## Purpose
-Provide a grounded financial question-answering pipeline over normalized Tesla
-filing data, with structured planning, hybrid retrieval, explicit calculation,
-and traceable answer payloads.
-## Requirements
 ### Requirement: Structured query planning
 The question-answering pipeline SHALL convert a user question into a structured query plan that captures time constraints, target metrics, retrieval filters, required period semantics, decomposed sub-questions when needed, and whether explicit calculation is required before answer generation. The planning service SHALL support English questions, Simplified Chinese questions, and mixed-language questions over the same Tesla filing corpus, and SHALL preserve both the original user query and a normalized search representation for downstream retrieval.
 
@@ -47,21 +42,6 @@ The question-answering pipeline SHALL retrieve evidence by combining keyword-awa
 - **WHEN** a query requires evidence from more than one period or comparison leg
 - **THEN** the retrieval flow preserves coverage for each required period instead of returning only the highest-scoring subset from a single fused pass
 
-### Requirement: Explicit financial calculation
-The question-answering pipeline SHALL perform ranking, aggregation, period-over-period numeric reasoning, and derived-period calculations in a dedicated calculation step rather than relying on free-form language generation to compute results. The calculation step SHALL validate that compared or combined facts use compatible period semantics before producing a final value.
-
-#### Scenario: Compute a quarterly comparison
-- **WHEN** a user asks for the quarter with the highest or lowest value across a time range
-- **THEN** the system computes the comparison from structured fact records and records the calculation steps in the answer payload
-
-#### Scenario: Derive a standalone quarter from annual and prior-quarter facts
-- **WHEN** a user asks for a standalone period that must be derived from a cumulative annual value and compatible earlier quarters
-- **THEN** the system computes the derived period explicitly and records the derivation steps in the answer payload
-
-#### Scenario: Reject incompatible period arithmetic
-- **WHEN** the requested calculation would combine facts whose period semantics are incompatible or ambiguous
-- **THEN** the system returns a limitation outcome instead of silently mixing those facts into a numeric result
-
 ### Requirement: Grounded answer payload
 The question-answering pipeline SHALL return an answer payload that includes answer text, citations, calculation steps when used, retrieval debug context, and a confidence or limitation signal. When the required grounded evidence is missing, incomplete, or semantically incompatible with the requested question, the payload SHALL return a limitation status rather than a speculative answer. The answer payload SHALL adapt its user-facing summary and limitation wording to the detected language of the user question while preserving citation excerpts in the source filing language.
 
@@ -80,4 +60,3 @@ The question-answering pipeline SHALL return an answer payload that includes ans
 #### Scenario: Return a language-adaptive limitation
 - **WHEN** a user asks a Chinese or mixed-language question and the system cannot assemble the required grounded evidence
 - **THEN** the limitation message is presented in Chinese while the retrieval debug context still records the original and normalized query representations
-

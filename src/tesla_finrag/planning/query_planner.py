@@ -18,6 +18,7 @@ from tesla_finrag.models import (
     CalculationIntent,
     CalculationOperand,
     PeriodSemantics,
+    QueryLanguage,
     QueryPlan,
     QueryType,
     SubQuery,
@@ -46,7 +47,9 @@ _FY_RE = re.compile(
     (?:
         (?:FY|fiscal\s+year|full\s+year|annual)\s*(?P<year>\d{4})
     |
-        (?P<year2>\d{4})\s+(?:annual|10-K|10K)
+        (?P<year2>\d{4})\s*(?:年)?\s*(?:annual|10-K|10K)
+    |
+        (?P<year3>\d{4})\s*(?:年)?\s*(?:财年|全年|年报|年度)
     )
     """,
     re.VERBOSE | re.IGNORECASE,
@@ -54,6 +57,27 @@ _FY_RE = re.compile(
 
 # Standalone year mention
 _YEAR_RE = re.compile(r"\b(20[12]\d)\b")
+
+_CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+_LATIN_CHAR_RE = re.compile(r"[A-Za-z]")
+_NUMERIC_DATE_RE = re.compile(
+    r"(?:截至|截止|as\s+of\s+)?(?P<year>\d{4})\s*[年/-]\s*(?P<month>\d{1,2})\s*[月/-]\s*(?P<day>\d{1,2})\s*日?",
+    re.IGNORECASE,
+)
+_CHINESE_QUARTER_RE = re.compile(
+    r"(?:(?P<year>\d{4})\s*年?\s*)?(?:[Qq](?P<q>[1-4])|第?(?P<cn>[一二三四1234])季度)"
+)
+
+_CHINESE_QUARTER_MAP = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+}
 
 # Approximate quarter end dates for Tesla fiscal calendar
 _QUARTER_END: dict[int, date] = {
@@ -76,6 +100,17 @@ def _fy_end(year: int) -> date:
     return _FY_END.replace(year=year)
 
 
+def detect_query_language(question: str) -> QueryLanguage:
+    """Detect the dominant language family in a query."""
+    has_cjk = bool(_CJK_CHAR_RE.search(question))
+    has_latin = bool(_LATIN_CHAR_RE.search(question))
+    if has_cjk and has_latin:
+        return QueryLanguage.MIXED
+    if has_cjk:
+        return QueryLanguage.CHINESE
+    return QueryLanguage.ENGLISH
+
+
 def extract_periods(question: str) -> list[date]:
     """Extract fiscal period end-dates mentioned in a question."""
     periods: list[date] = []
@@ -90,10 +125,54 @@ def extract_periods(question: str) -> list[date]:
         occupied_spans.append(m.span())
 
     for m in _FY_RE.finditer(question):
-        year_str = m.group("year") or m.group("year2")
+        year_str = m.group("year") or m.group("year2") or m.group("year3")
         if year_str:
             periods.append(_fy_end(int(year_str)))
             occupied_spans.append(m.span())
+
+    for m in _NUMERIC_DATE_RE.finditer(question):
+        try:
+            periods.append(
+                date(
+                    int(m.group("year")),
+                    int(m.group("month")),
+                    int(m.group("day")),
+                )
+            )
+            occupied_spans.append(m.span())
+        except ValueError:
+            continue
+
+    year_mentions = [
+        (match.start(), int(match.group(1)))
+        for match in re.finditer(r"(20[12]\d)", question)
+    ]
+    last_year: int | None = None
+    for m in _CHINESE_QUARTER_RE.finditer(question):
+        start, end = m.span()
+        overlaps_existing_period = any(
+            start < occupied_end and end > occupied_start
+            for occupied_start, occupied_end in occupied_spans
+        )
+        if overlaps_existing_period:
+            continue
+        if m.group("year"):
+            last_year = int(m.group("year"))
+        elif last_year is None:
+            for year_pos, year_value in year_mentions:
+                if year_pos < start:
+                    last_year = year_value
+                else:
+                    break
+        if last_year is None:
+            continue
+        q_str = m.group("q")
+        cn_str = m.group("cn")
+        quarter = int(q_str) if q_str else _CHINESE_QUARTER_MAP.get(cn_str or "")
+        if quarter is None:
+            continue
+        periods.append(_quarter_end(last_year, quarter))
+        occupied_spans.append(m.span())
 
     for m in _YEAR_RE.finditer(question):
         start, end = m.span()
@@ -122,6 +201,13 @@ _METRIC_ALIASES: dict[str, list[str]] = {
         "net revenue",
         "net revenues",
         "sales",
+        "revenue growth",
+        "营收",
+        "收入",
+        "营业收入",
+        "总营收",
+        "总收入",
+        "总营业收入",
     ],
     "us-gaap:GrossProfit": [
         "gross profit",
@@ -129,6 +215,9 @@ _METRIC_ALIASES: dict[str, list[str]] = {
         "gross margin %",
         "gross margin percent",
         "gross margin percentage",
+        "毛利润",
+        "毛利",
+        "毛利率",
     ],
     "us-gaap:OperatingIncomeLoss": [
         "operating income",
@@ -137,37 +226,57 @@ _METRIC_ALIASES: dict[str, list[str]] = {
         "income from operations",
         "operating margin",
         "operating margin %",
+        "营业利润",
+        "营业收益",
+        "经营利润",
+        "营业利润率",
+        "营业利润率%",
     ],
     "us-gaap:NetIncomeLoss": [
         "net income",
         "net loss",
         "net profit",
         "bottom line",
+        "净利润",
+        "净收益",
     ],
     "us-gaap:EarningsPerShareBasic": [
         "eps",
         "earnings per share",
+        "每股收益",
     ],
     "us-gaap:ResearchAndDevelopmentExpense": [
         "r&d",
         "research and development",
         "r&d expense",
         "research & development",
+        "研发",
+        "研发费用",
+        "研究与开发",
+        "研究和开发",
     ],
     "us-gaap:SellingGeneralAndAdministrativeExpense": [
         "sg&a",
         "selling general and administrative",
         "selling, general and administrative",
+        "销售管理费用",
+        "销售、一般及行政费用",
+        "管理费用",
     ],
     "us-gaap:CashAndCashEquivalentsAtCarryingValue": [
         "cash",
         "cash and cash equivalents",
         "cash position",
+        "现金",
+        "现金及现金等价物",
+        "现金头寸",
     ],
     "us-gaap:LongTermDebt": [
         "long-term debt",
         "long term debt",
         "total debt",
+        "长期债务",
+        "总债务",
     ],
     "us-gaap:CostOfGoodsAndServicesSold": [
         "cost of revenue",
@@ -175,24 +284,37 @@ _METRIC_ALIASES: dict[str, list[str]] = {
         "cogs",
         "cost of sales",
         "cost of automotive revenue",
+        "营业成本",
+        "收入成本",
+        "销售成本",
+        "汽车业务成本",
     ],
     "custom:FreeCashFlow": [
         "free cash flow",
         "fcf",
+        "自由现金流",
     ],
     "us-gaap:NetCashProvidedByUsedInOperatingActivities": [
         "operating cash flow",
         "cash flow from operations",
         "cash from operations",
         "net cash provided by operating activities",
+        "经营现金流",
+        "经营活动现金流",
+        "经营活动产生的现金流量净额",
     ],
     "custom:AutomotiveRevenue": [
         "automotive revenue",
         "automotive sales",
+        "汽车业务营收",
+        "汽车业务收入",
     ],
     "custom:EnergyRevenue": [
         "energy revenue",
         "energy generation and storage revenue",
+        "能源业务营收",
+        "能源业务收入",
+        "储能业务营收",
     ],
     # NOTE: "gross margin %" / "operating margin %" used to map to
     # pseudo-concepts (custom:GrossMarginPercent, custom:OperatingMarginPercent)
@@ -205,6 +327,8 @@ _METRIC_ALIASES: dict[str, list[str]] = {
         "capital expenditure",
         "capex",
         "capital expenditures",
+        "资本开支",
+        "资本支出",
     ],
 }
 
@@ -240,6 +364,109 @@ def extract_metrics(question: str) -> list[str]:
     return found
 
 
+_NORMALIZED_TERM_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"毛利率"), "gross margin"),
+    (re.compile(r"营业利润率|经营利润率"), "operating margin"),
+    (re.compile(r"供应链"), "supply chain"),
+    (re.compile(r"风险因素?"), "risk factors"),
+    (re.compile(r"宏观背景"), "macro environment"),
+    (re.compile(r"挑战"), "challenge"),
+    (re.compile(r"提到|描述|讨论|说明"), "discuss describe mention"),
+    (re.compile(r"展望"), "outlook"),
+    (re.compile(r"指引"), "guidance"),
+    (re.compile(r"竞争"), "competition"),
+    (re.compile(r"原材料"), "raw material"),
+    (re.compile(r"物流"), "logistics"),
+    (re.compile(r"半导体"), "semiconductor"),
+    (re.compile(r"地缘政治"), "geopolitical"),
+    (re.compile(r"中国市场"), "china market"),
+    (re.compile(r"产能瓶颈"), "capacity bottleneck"),
+    (re.compile(r"比较|对比"), "compare"),
+    (re.compile(r"同比"), "year over year growth rate compare"),
+    (re.compile(r"环比"), "quarter over quarter growth rate compare"),
+    (re.compile(r"增长率"), "growth rate"),
+    (re.compile(r"增长|增幅|提升"), "growth compare"),
+    (re.compile(r"下降|降幅|减少"), "decline compare"),
+    (re.compile(r"最高|最大"), "highest"),
+    (re.compile(r"最低|最小"), "lowest"),
+    (re.compile(r"哪个季度"), "which quarter"),
+    (re.compile(r"哪一年"), "which year"),
+    (re.compile(r"计算过程|逐步|一步一步|展示步骤|详细计算"), "show step by step calculation"),
+    (re.compile(r"除以|占比|比率|百分比"), "ratio percentage divided by"),
+    (re.compile(r"差额|差异|相差|减去|净变化|绝对变化"), "difference subtract"),
+    (re.compile(r"表格|明细|拆分"), "table breakdown"),
+    (re.compile(r"资产负债表"), "balance sheet"),
+    (re.compile(r"利润表"), "income statement"),
+    (re.compile(r"现金流量表"), "cash flow statement"),
+    (re.compile(r"10-K|年报", re.IGNORECASE), "10-k annual"),
+    (re.compile(r"10-Q|季报", re.IGNORECASE), "10-q quarterly"),
+]
+
+
+def _ordered_unique(parts: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for part in parts:
+        normalized = part.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return ordered
+
+
+def _extract_normalized_terms(question: str) -> list[str]:
+    """Extract normalized English cue phrases from English/Chinese questions."""
+    lowered = question.lower()
+    terms: list[str] = []
+    for pattern, replacement in _NORMALIZED_TERM_PATTERNS:
+        if pattern.search(question) or replacement in lowered:
+            terms.append(replacement)
+    return _ordered_unique(terms)
+
+
+def _build_rule_text(
+    question: str,
+    metrics: list[str],
+    periods: list[date],
+) -> str:
+    """Build a normalized text surface for multilingual rule matching."""
+    parts = [question.lower()]
+    parts.extend(_extract_normalized_terms(question))
+    parts.extend(_concept_to_human_label(concept, question=question) for concept in metrics)
+    parts.extend(
+        _period_label(
+            period,
+            classify_period_semantics(period, question),
+        )
+        for period in periods
+    )
+    return " ".join(_ordered_unique(parts))
+
+
+def _build_normalized_search_text(
+    question: str,
+    metrics: list[str],
+    periods: list[date],
+    *,
+    query_language: QueryLanguage,
+) -> str:
+    """Build normalized search text for retrieval over primarily English filings."""
+    concept_labels = [_concept_to_human_label(concept, question=question) for concept in metrics]
+    period_labels = [
+        _period_label(period, classify_period_semantics(period, question))
+        for period in periods
+    ]
+    normalized_terms = _extract_normalized_terms(question)
+
+    if query_language == QueryLanguage.ENGLISH:
+        parts = [question.strip(), *normalized_terms, *concept_labels, *period_labels]
+    else:
+        parts = [*normalized_terms, *concept_labels, *period_labels]
+
+    return " ".join(_ordered_unique(parts)).strip()
+
+
 # ---------------------------------------------------------------------------
 # Query type classification
 # ---------------------------------------------------------------------------
@@ -272,11 +499,12 @@ _NARRATIVE_PATTERNS = re.compile(
 
 def classify_query_type(question: str, metrics: list[str]) -> QueryType:
     """Classify the intent of a financial question."""
-    has_calc = bool(_CALCULATION_PATTERNS.search(question))
-    has_rank = bool(_RANKING_PATTERNS.search(question))
-    has_compare = bool(_COMPARISON_PATTERNS.search(question))
-    has_table = bool(_TABLE_PATTERNS.search(question))
-    has_narrative = bool(_NARRATIVE_PATTERNS.search(question))
+    rule_text = _build_rule_text(question, metrics, extract_periods(question))
+    has_calc = bool(_CALCULATION_PATTERNS.search(rule_text))
+    has_rank = bool(_RANKING_PATTERNS.search(rule_text))
+    has_compare = bool(_COMPARISON_PATTERNS.search(rule_text))
+    has_table = bool(_TABLE_PATTERNS.search(rule_text))
+    has_narrative = bool(_NARRATIVE_PATTERNS.search(rule_text))
     has_metrics = bool(metrics)
 
     # Composite: both narrative and numeric/comparison signals present.
@@ -304,7 +532,11 @@ def classify_query_type(question: str, metrics: list[str]) -> QueryType:
 # ---------------------------------------------------------------------------
 
 
-def extract_keywords(question: str) -> list[str]:
+def extract_keywords(
+    question: str,
+    metrics: list[str] | None = None,
+    periods: list[date] | None = None,
+) -> list[str]:
     """Extract important keywords for lexical search."""
     # Remove common stop words and return significant terms
     stop_words = {
@@ -399,9 +631,12 @@ def extract_keywords(question: str) -> list[str]:
         "over",
     }
 
-    tokens = re.findall(r"[a-z][a-z'&-]+", question.lower())
+    current_metrics = metrics if metrics is not None else extract_metrics(question)
+    current_periods = periods if periods is not None else extract_periods(question)
+    keyword_surface = _build_rule_text(question, current_metrics, current_periods)
+    tokens = re.findall(r"[a-z][a-z'&-]+", keyword_surface.lower())
     keywords = [t for t in tokens if t not in stop_words and len(t) > 2]
-    return keywords
+    return _ordered_unique(keywords)
 
 
 # ---------------------------------------------------------------------------
@@ -423,8 +658,11 @@ def classify_period_semantics(
     # A December 31 period-end that matches FY pattern or standalone year
     if period.month == 12 and period.day == 31:
         # Check if a quarter pattern explicitly targets Q4
-        q4_explicit = bool(re.search(r"[Qq]4\s*[-/]?\s*" + str(period.year), lower)) or bool(
-            re.search(str(period.year) + r"\s*[-/]?\s*[Qq]4", lower)
+        q4_explicit = (
+            bool(re.search(r"[Qq]4\s*[-/]?\s*" + str(period.year), lower))
+            or bool(re.search(str(period.year) + r"\s*[-/]?\s*[Qq]4", lower))
+            or bool(re.search(str(period.year) + r"\s*年\s*第?4季度", question))
+            or "第四季度" in question
         )
         if q4_explicit:
             return PeriodSemantics.QUARTERLY_STANDALONE
@@ -471,6 +709,8 @@ def _build_sub_queries(
     periods: list[date],
     concepts: list[str],
     period_sem_map: dict[str, PeriodSemantics],
+    *,
+    query_language: QueryLanguage,
 ) -> list[SubQuery]:
     """Build period-aware sub-queries for multi-period questions.
 
@@ -489,10 +729,17 @@ def _build_sub_queries(
             text = f"{', '.join(concept_labels)} for {period_label}"
         else:
             text = f"{question} for {period_label}"
+        search_text = _build_normalized_search_text(
+            question,
+            concepts,
+            [period],
+            query_language=query_language,
+        )
 
         sub_queries.append(
             SubQuery(
                 text=text,
+                search_text=search_text,
                 target_period=period,
                 target_concepts=concepts,
                 period_semantics=sem,
@@ -572,7 +819,7 @@ def _infer_margin_intent(
 
     Returns ``(None, [], metrics)`` when no margin pattern is detected.
     """
-    lower = question.lower()
+    lower = _build_rule_text(question, metrics, periods)
     numerator_concept: str | None = None
 
     if _GROSS_MARGIN_RE.search(lower):
@@ -627,7 +874,8 @@ _STEP_TRACE_RE = re.compile(
 
 def _detect_step_trace(question: str) -> bool:
     """Return True when the question asks for a step-by-step answer."""
-    return bool(_STEP_TRACE_RE.search(question))
+    rule_text = _build_rule_text(question, extract_metrics(question), extract_periods(question))
+    return bool(_STEP_TRACE_RE.search(rule_text))
 
 
 def _infer_step_trace_intent(
@@ -646,10 +894,10 @@ def _infer_step_trace_intent(
     if not requires_step_trace:
         return None, [], metrics
 
-    lower = question.lower()
+    lower = _build_rule_text(question, metrics, periods)
     is_fcf_decomposition = (
         "free cash flow" in lower
-        and "capital expend" in lower
+        and ("capital expend" in lower or "capex" in lower)
         and "operating cash flow" in lower
         and ("subtract" in lower or "subtraction" in lower)
     )
@@ -714,9 +962,10 @@ def _infer_answer_shape(
     5. Multiple metrics + narrative → COMPOSITE
     6. Default → SINGLE_VALUE
     """
-    has_rank = bool(_RANKING_PATTERNS.search(question))
-    has_compare = bool(_COMPARISON_MULTI_PERIOD.search(question))
-    has_narrative = bool(_NARRATIVE_PATTERNS.search(question))
+    rule_text = _build_rule_text(question, metrics, periods)
+    has_rank = bool(_RANKING_PATTERNS.search(rule_text))
+    has_compare = bool(_COMPARISON_MULTI_PERIOD.search(rule_text))
+    has_narrative = bool(_NARRATIVE_PATTERNS.search(rule_text))
     n_periods = len(periods)
     n_metrics = len(metrics)
 
@@ -762,7 +1011,7 @@ _DIFFERENCE_RE = re.compile(
     re.IGNORECASE,
 )
 _COMPOSITE_SPLIT_RE = re.compile(
-    r"\s*,?\s*and\s+(?:how|what)\b",
+    r"(?:\s*,?\s*and\s+(?:how|what)\b|以及|并且|同时)",
     re.IGNORECASE,
 )
 
@@ -793,22 +1042,23 @@ def _infer_calculation_intent(
 
     n_periods = len(periods)
     n_metrics = len(metrics)
+    rule_text = _build_rule_text(question, metrics, periods)
 
     # PCT_CHANGE: explicit keywords + multi-period + single metric
-    if _PCT_CHANGE_RE.search(question) and n_periods >= 2 and n_metrics >= 1:
+    if _PCT_CHANGE_RE.search(rule_text) and n_periods >= 2 and n_metrics >= 1:
         return CalculationIntent.PCT_CHANGE
 
     # RANK: ranking keywords + multi-period (checked before RATIO to avoid
     # false RATIO matches on "margin" when the real intent is ranking)
-    if _RANKING_PATTERNS.search(question) and n_periods >= 2:
+    if _RANKING_PATTERNS.search(rule_text) and n_periods >= 2:
         return CalculationIntent.RANK
 
     # RATIO: explicit ratio keywords + multiple metrics (non-margin)
-    if _RATIO_RE.search(question) and n_metrics >= 2:
+    if _RATIO_RE.search(rule_text) and n_metrics >= 2:
         return CalculationIntent.RATIO
 
     # DIFFERENCE: difference keywords + exactly 2 periods
-    if _DIFFERENCE_RE.search(question) and n_periods == 2 and n_metrics >= 1:
+    if _DIFFERENCE_RE.search(rule_text) and n_periods == 2 and n_metrics >= 1:
         return CalculationIntent.DIFFERENCE
 
     # LOOKUP: simple factual retrieval (metric + period, no calc keywords)
@@ -878,6 +1128,8 @@ def _build_composite_narrative_sub_query(
     question: str,
     periods: list[date],
     period_sem_map: dict[str, PeriodSemantics],
+    *,
+    query_language: QueryLanguage,
 ) -> SubQuery:
     """Build a narrative-only sub-query for composite questions."""
     target_period = max(periods) if periods else None
@@ -897,6 +1149,12 @@ def _build_composite_narrative_sub_query(
     )
     return SubQuery(
         text=narrative_text,
+        search_text=_build_normalized_search_text(
+            narrative_text,
+            [],
+            [target_period] if target_period is not None else [],
+            query_language=query_language,
+        ),
         target_period=target_period,
         target_concepts=[],
         period_semantics=semantics,
@@ -917,14 +1175,21 @@ class RuleBasedQueryPlanner(QueryPlanningService):
 
     def plan(self, question: str) -> QueryPlan:
         """Parse a question into a structured :class:`QueryPlan`."""
+        query_language = detect_query_language(question)
         periods = extract_periods(question)
         metrics = extract_metrics(question)
         query_type = classify_query_type(question, metrics)
-        keywords = extract_keywords(question)
+        keywords = extract_keywords(question, metrics, periods)
+        normalized_query = _build_normalized_search_text(
+            question,
+            metrics,
+            periods,
+            query_language=query_language,
+        )
 
         needs_calculation = (
             query_type in (QueryType.NUMERIC_CALCULATION, QueryType.TABLE_LOOKUP)
-            or bool(_CALCULATION_PATTERNS.search(question))
+            or bool(_CALCULATION_PATTERNS.search(_build_rule_text(question, metrics, periods)))
             or (bool(metrics) and bool(periods))  # metric + period = factual lookup
         )
 
@@ -934,7 +1199,13 @@ class RuleBasedQueryPlanner(QueryPlanningService):
         # Decompose into sub-queries for multi-period questions
         sub_queries: list[SubQuery] = []
         if _needs_decomposition(question, periods):
-            sub_queries = _build_sub_queries(question, periods, metrics, period_sem_map)
+            sub_queries = _build_sub_queries(
+                question,
+                periods,
+                metrics,
+                period_sem_map,
+                query_language=query_language,
+            )
 
         # --- Phase B: Explicit intent inference ---
 
@@ -969,6 +1240,7 @@ class RuleBasedQueryPlanner(QueryPlanningService):
                     question,
                     periods,
                     period_sem_map,
+                    query_language=query_language,
                 )
             )
 
@@ -1005,6 +1277,8 @@ class RuleBasedQueryPlanner(QueryPlanningService):
 
         return QueryPlan(
             original_query=question,
+            query_language=query_language,
+            normalized_query=normalized_query,
             query_type=query_type,
             sub_questions=[question],
             sub_queries=sub_queries,

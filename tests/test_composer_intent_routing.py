@@ -11,7 +11,9 @@ from tesla_finrag.models import (
     AnswerShape,
     CalculationIntent,
     CalculationOperand,
+    EvidenceBundle,
     FactRecord,
+    QueryLanguage,
     QueryPlan,
     QueryType,
 )
@@ -186,3 +188,47 @@ def test_step_trace_intent_decomposes_free_cash_flow() -> None:
     assert any("Capital expenditure (2023-12-31): 200.00" in line for line in trace)
     assert any("Free cash flow (2023-12-31): 1,000.00 - 200.00 = 800.00" in line for line in trace)
     assert any("Grounded FCF fact (2023-12-31): 800.00" in line for line in trace)
+
+
+def test_compose_text_uses_chinese_intro_and_result_label() -> None:
+    composer = _composer()
+    plan = QueryPlan(
+        original_query="特斯拉 FY2023 的营收是多少？",
+        normalized_query="revenue FY2023",
+        query_language=QueryLanguage.CHINESE,
+        query_type=QueryType.NUMERIC_CALCULATION,
+        required_periods=[date(2023, 12, 31)],
+        required_concepts=["us-gaap:Revenues"],
+        needs_calculation=True,
+    )
+    text = composer._compose_text(
+        plan,
+        EvidenceBundle(
+            plan_id=plan.plan_id,
+            facts=[_fact("us-gaap:Revenues", 96773.0, date(2023, 12, 31), "Revenue")],
+        ),
+        96773.0,
+        ["Revenue: 96,773.00 USD (period ending 2023-12-31)"],
+    )
+    assert text.startswith("根据 Tesla SEC 财报：")
+    assert "\n结果: 96,773.00" in text
+
+
+def test_compose_limitation_text_uses_chinese_header() -> None:
+    composer = _composer()
+    plan = QueryPlan(
+        original_query="截至2023年12月31日，特斯拉的现金及现金等价物是多少？",
+        normalized_query="cash FY2023",
+        query_language=QueryLanguage.CHINESE,
+    )
+    text = composer._compose_limitation_text(plan, ["Missing grounded evidence"])
+    assert text.startswith("无法基于现有证据为这个问题提供完全有依据的答案。")
+
+
+def test_display_ratio_as_percent_uses_normalized_query() -> None:
+    plan = QueryPlan(
+        original_query="特斯拉 FY2023 的毛利率是多少？",
+        normalized_query="gross margin FY2023",
+        query_language=QueryLanguage.CHINESE,
+    )
+    assert GroundedAnswerComposer._display_ratio_as_percent(plan) is True

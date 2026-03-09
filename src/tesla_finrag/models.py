@@ -87,6 +87,14 @@ class SearchMode(StrEnum):
     FACT = "fact"
 
 
+class QueryLanguage(StrEnum):
+    """Detected language family for the user query."""
+
+    ENGLISH = "english"
+    CHINESE = "chinese"
+    MIXED = "mixed"
+
+
 # ---------------------------------------------------------------------------
 # Retrieval result
 # ---------------------------------------------------------------------------
@@ -348,6 +356,10 @@ class SubQuery(BaseModel):
 
     sub_query_id: UUID = Field(default_factory=uuid4)
     text: str = Field(description="Natural-language retrieval query for this unit.")
+    search_text: str = Field(
+        "",
+        description="Normalized retrieval query actually used by search backends.",
+    )
     target_period: date | None = Field(
         None,
         description="Fiscal period-end this sub-query targets.",
@@ -421,6 +433,11 @@ class QueryPlan(BaseModel):
 
     plan_id: UUID = Field(default_factory=uuid4)
     original_query: str
+    query_language: QueryLanguage = QueryLanguage.ENGLISH
+    normalized_query: str = Field(
+        "",
+        description="Normalized retrieval text used to search the filing corpus.",
+    )
     query_type: QueryType = QueryType.HYBRID_REASONING
     sub_questions: list[str] = Field(default_factory=list)
     sub_queries: list[SubQuery] = Field(

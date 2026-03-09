@@ -13,10 +13,26 @@ from uuid import UUID
 
 from tesla_finrag.models import ChunkKind, RetrievalResult, SearchMode, SectionChunk, TableChunk
 
+_LATIN_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-'][a-z0-9]+)*")
+_CJK_SEGMENT_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+
+def _cjk_tokens(segment: str) -> list[str]:
+    """Emit the full segment and overlapping bi-grams for CJK text."""
+    tokens = [segment]
+    if len(segment) <= 1:
+        return tokens
+    tokens.extend(segment[i : i + 2] for i in range(len(segment) - 1))
+    return tokens
+
 
 def _tokenize(text: str) -> list[str]:
-    """Lowercase and split on non-alphanumeric boundaries."""
-    return re.findall(r"[a-z0-9]+", text.lower())
+    """Tokenize Latin text, digits, and contiguous CJK text."""
+    lowered = text.lower()
+    tokens = _LATIN_TOKEN_RE.findall(lowered)
+    for segment in _CJK_SEGMENT_RE.findall(text):
+        tokens.extend(_cjk_tokens(segment))
+    return tokens
 
 
 class LexicalSearcher:

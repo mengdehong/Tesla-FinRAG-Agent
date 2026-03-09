@@ -14,13 +14,14 @@ from uuid import UUID
 import pytest
 
 from tesla_finrag.ingestion.index_segmentation import ChunkSegment
-from tesla_finrag.models import SectionChunk, TableChunk
+from tesla_finrag.models import QueryLanguage, QueryPlan, SectionChunk, SubQuery, TableChunk
 from tesla_finrag.retrieval import (
     HybridRetrievalService,
     InMemoryCorpusRepository,
     InMemoryFactsRepository,
 )
 from tesla_finrag.retrieval.lancedb_store import LanceDBRetrievalStore
+from tesla_finrag.retrieval.lexical import _tokenize
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -122,8 +123,6 @@ class TestLanceDBHybridRetrieval:
             embed_fn=embed_fn,
         )
 
-        from tesla_finrag.models import QueryPlan
-
         plan = QueryPlan(original_query="What was Tesla's revenue?", sub_questions=["revenue"])
         bundle = service.retrieve(plan)
 
@@ -172,8 +171,68 @@ class TestLanceDBHybridRetrieval:
             embed_fn=lambda _: _EMBEDDING,
         )
 
-        from tesla_finrag.models import QueryPlan
-
         bundle = service.retrieve(QueryPlan(original_query="revenue"))
         assert len(bundle.section_chunks) == 1
         assert bundle.section_chunks[0].chunk_id == section.chunk_id
+
+    def test_tokenizer_supports_cjk_queries(self) -> None:
+        assert "供应链风险因素" in _tokenize("供应链风险因素")
+        assert "供应" in _tokenize("供应链风险因素")
+        assert "fy2023" in _tokenize("比较特斯拉FY2023的营收")
+
+    def test_hybrid_service_uses_normalized_query_text_for_chinese_question(
+        self,
+        populated_store: LanceDBRetrievalStore,
+        corpus_repo: InMemoryCorpusRepository,
+        facts_repo: InMemoryFactsRepository,
+    ) -> None:
+        service = HybridRetrievalService(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            retrieval_store=populated_store,
+            embed_fn=lambda _: _EMBEDDING,
+        )
+
+        plan = QueryPlan(
+            original_query="特斯拉 2023 年的营收是多少？",
+            normalized_query="tesla revenue FY2023",
+            query_language=QueryLanguage.CHINESE,
+            sub_questions=["特斯拉 2023 年的营收是多少？"],
+        )
+        bundle = service.retrieve(plan)
+
+        total = len(bundle.section_chunks) + len(bundle.table_chunks)
+        assert total > 0
+        assert bundle.metadata["original_query_text"] == "特斯拉 2023 年的营收是多少？"
+        assert bundle.metadata["normalized_query_text"] == "tesla revenue FY2023"
+
+    def test_hybrid_service_uses_sub_query_search_text_in_per_period_mode(
+        self,
+        populated_store: LanceDBRetrievalStore,
+        corpus_repo: InMemoryCorpusRepository,
+        facts_repo: InMemoryFactsRepository,
+    ) -> None:
+        service = HybridRetrievalService(
+            corpus_repo=corpus_repo,
+            facts_repo=facts_repo,
+            retrieval_store=populated_store,
+            embed_fn=lambda _: _EMBEDDING,
+        )
+
+        plan = QueryPlan(
+            original_query="比较 2023Q2 的营收表现",
+            normalized_query="revenue Q2 2023",
+            query_language=QueryLanguage.CHINESE,
+            sub_questions=["比较 2023Q2 的营收表现"],
+            sub_queries=[
+                SubQuery(
+                    text="比较 2023Q2 的营收表现",
+                    search_text="revenue Q2 2023",
+                    target_period=date(2023, 6, 30),
+                )
+            ],
+        )
+        bundle = service.retrieve(plan)
+        per_period = next(iter(bundle.metadata["per_period"].values()))
+        assert per_period["query_text"] == "revenue Q2 2023"
+        assert per_period["original_sub_query_text"] == "比较 2023Q2 的营收表现"

@@ -33,8 +33,9 @@ class LexicalSearcher:
     def __init__(self, *, k1: float = 1.5, b: float = 0.75) -> None:
         self._k1 = k1
         self._b = b
-        self._docs: list[tuple[SectionChunk | TableChunk, list[str]]] = []
+        self._docs: list[tuple[SectionChunk | TableChunk, Counter[str], int]] = []
         self._df: Counter[str] = Counter()
+        self._total_tokens: int = 0
         self._avg_dl: float = 0.0
 
     # -- Indexing --------------------------------------------------------------
@@ -48,12 +49,14 @@ class LexicalSearcher:
         """Index a batch of chunks for lexical search."""
         for chunk in chunks:
             tokens = _tokenize(self._text_for_chunk(chunk))
-            self._docs.append((chunk, tokens))
+            tf_map = Counter(tokens)
+            dl = len(tokens)
+            self._docs.append((chunk, tf_map, dl))
             self._df.update(set(tokens))
+            self._total_tokens += dl
 
-        total_tokens = sum(len(tokens) for _, tokens in self._docs)
         n_docs = len(self._docs)
-        self._avg_dl = total_tokens / n_docs if n_docs > 0 else 1.0
+        self._avg_dl = self._total_tokens / n_docs if n_docs > 0 else 1.0
 
     # -- Search ----------------------------------------------------------------
 
@@ -85,12 +88,10 @@ class LexicalSearcher:
         id_set = set(doc_ids) if doc_ids is not None else None
 
         scored: list[tuple[SectionChunk | TableChunk, float]] = []
-        for chunk, doc_tokens in self._docs:
+        for chunk, tf_map, dl in self._docs:
             if id_set is not None and chunk.doc_id not in id_set:
                 continue
 
-            dl = len(doc_tokens)
-            tf_map = Counter(doc_tokens)
             score = 0.0
             for qt in query_tokens:
                 tf = tf_map.get(qt, 0)

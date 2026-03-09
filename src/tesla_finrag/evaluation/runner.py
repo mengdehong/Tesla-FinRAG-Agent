@@ -225,9 +225,13 @@ class EvaluationRunner:
             # Structured judge (runs when question has assertions)
             structured_passed, judge_breakdown = self._structured_check(q, answer)
 
-            # Dual-track decision: structured takes priority when available
+            # Dual-track decision: structured assertions remain primary, but
+            # explicit answer-text keywords still gate success when present so
+            # retrieval coverage alone cannot pass an off-topic final answer.
             if structured_passed is not None:
-                passed = structured_passed
+                passed = structured_passed and (
+                    legacy_passed if q.expected_answer_contains else True
+                )
             else:
                 passed = legacy_passed
 

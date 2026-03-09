@@ -218,5 +218,60 @@
     "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"],
     "expected_status": "ok",
     "expected_facts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
+  },
+  {
+    "question_id": "BQ-016",
+    "question": "What was Tesla's accounts payable current at the end of FY2024?",
+    "category": "balance_sheet",
+    "difficulty": "medium",
+    "expected_answer_contains": ["accounts payable", "12,474,000,000"],
+    "required_periods": ["2024-12-31"],
+    "required_concepts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 12474000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-017",
+    "question": "What was Tesla's public float according to the 2024 annual filing?",
+    "category": "balance_sheet",
+    "difficulty": "hard",
+    "expected_answer_contains": ["public float", "550,170,000,000"],
+    "required_periods": ["2024-06-28"],
+    "required_concepts": ["dei:EntityPublicFloat"],
+    "expected_status": "ok",
+    "expected_facts": ["dei:EntityPublicFloat"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 550170000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-018",
+    "question": "Compare Tesla's accounts receivable current between FY2023 and FY2024.",
+    "category": "cross_year",
+    "difficulty": "medium",
+    "expected_answer_contains": ["accounts receivable", "3,508,000,000", "4,418,000,000"],
+    "required_periods": ["2023-12-31", "2024-12-31"],
+    "required_concepts": ["us-gaap:AccountsReceivableNetCurrent"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:AccountsReceivableNetCurrent"]
+  },
+  {
+    "question_id": "BQ-019",
+    "question": "What geopolitical risks did Tesla mention in 2024, and what was accounts payable current at year-end?",
+    "category": "text_plus_table",
+    "difficulty": "hard",
+    "expected_answer_contains": ["geopolitical", "accounts payable"],
+    "required_periods": ["2024-12-31"],
+    "required_concepts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_narrative_terms": ["geopolitical"]
   }
 ]

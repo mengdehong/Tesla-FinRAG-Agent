@@ -843,8 +843,8 @@ class TestDualTrackRunner:
         assert r.judge_breakdown is not None
         assert r.judge_breakdown.status_ok is True
 
-    def test_structured_overrides_legacy_fail(self) -> None:
-        """BQ-008 scenario: legacy fails (missing keyword), structured passes."""
+    def test_structured_answer_still_requires_explicit_keywords(self) -> None:
+        """Structured retrieval coverage must not hide an off-topic final answer."""
         questions = [
             {
                 "question_id": "DT-002",
@@ -871,9 +871,8 @@ class TestDualTrackRunner:
         )
         run = runner.run_all()
         r = run.results[0]
-        # Structured passes, so overall passes despite legacy failing
-        assert r.passed is True
-        assert r.legacy_passed is False  # missing "result" keyword
+        assert r.passed is False
+        assert r.legacy_passed is False
         assert r.structured_passed is True
 
     def test_no_structured_falls_back_to_legacy(self) -> None:
@@ -1249,6 +1248,14 @@ class TestBenchmarkDataIntegrity:
             if any("\u4e00" <= ch <= "\u9fff" for ch in question.question)
         )
         assert chinese_count >= 5, "Benchmark should include a meaningful set of Chinese questions"
+
+    def test_benchmark_includes_niche_financial_questions(self) -> None:
+        path = self._PROJECT_ROOT / "data" / "evaluation" / "benchmark_questions.json"
+        if not path.exists():
+            pytest.skip("benchmark_questions.json not found")
+        questions = load_benchmark_questions(path)
+        ids = {question.question_id for question in questions}
+        assert {"BQ-016", "BQ-017", "BQ-018", "BQ-019"} <= ids
 
     def test_failure_analysis_case_ids_unique(self) -> None:
         path = self._PROJECT_ROOT / "data" / "evaluation" / "failure_analyses.json"

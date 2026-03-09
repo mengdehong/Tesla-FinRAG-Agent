@@ -588,6 +588,17 @@ class TestChinesePlannerSupport:
         )
         assert periods == [date(2022, 12, 31), date(2023, 12, 31)]
 
+    def test_extract_periods_bare_chinese_year_adjacent_to_han_chars(self):
+        # Regression: "2023年" was not matched because Python's Unicode regex
+        # treats Chinese characters as \\w, so \\b had no boundary between
+        # the trailing digit and "年".  The fix uses digit-only lookarounds.
+        assert extract_periods("特斯拉2023年整体营收") == [date(2023, 12, 31)]
+        assert extract_periods("2023年特斯拉的总营收是多少？") == [date(2023, 12, 31)]
+        assert extract_periods("特斯拉在2022年和2023年的营收分别是多少") == [
+            date(2022, 12, 31),
+            date(2023, 12, 31),
+        ]
+
     def test_planner_normalizes_chinese_numeric_query(self):
         planner = RuleBasedQueryPlanner()
         plan = planner.plan("比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？")

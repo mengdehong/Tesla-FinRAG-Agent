@@ -1054,15 +1054,19 @@ class GroundedAnswerComposer(AnswerService):
         if plan.answer_shape == AnswerShape.TIME_SERIES and bundle.facts:
             parts.append(self._compose_time_series_text(plan, bundle))
 
-        elif plan.query_type == QueryType.NUMERIC_CALCULATION and calc_trace:
-            # Lead with the calculation result
+        elif plan.query_type == QueryType.NUMERIC_CALCULATION:
             parts.append(self._sec_filings_intro(plan))
             if focus_summary:
                 parts.append(focus_summary)
-            for line in calc_trace:
-                parts.append(line)
-            if calc_result is not None:
-                parts.append(self._result_line(plan, calc_result))
+            if calc_trace:
+                # Arithmetic path: show calculation steps and final result.
+                for line in calc_trace:
+                    parts.append(line)
+                if calc_result is not None:
+                    parts.append(self._result_line(plan, calc_result))
+            elif bundle.facts:
+                # Direct lookup path: no arithmetic needed, present XBRL values cleanly.
+                parts.extend(self._compose_fact_lookup_lines(plan, bundle.facts))
 
         elif plan.query_type == QueryType.TABLE_LOOKUP and bundle.table_chunks:
             parts.append(self._financial_statements_intro(plan))
@@ -1085,22 +1089,37 @@ class GroundedAnswerComposer(AnswerService):
                 parts.append(f"[{chunk.section_title}] {excerpt}")
 
         else:
-            # Hybrid: combine narrative and facts
+            # Hybrid: combine narrative and facts.
+            # For a pure fact lookup (non-COMPOSITE, no calc trace, facts available),
+            # skip raw section chunk excerpts and present the structured XBRL values
+            # cleanly instead — e.g. "特斯拉2023年整体营收" should show the number,
+            # not a paragraph snippet.
+            # COMPOSITE queries (supply chain risk + numeric) always show both narrative
+            # and facts so we never suppress section chunks for them.
+            is_fact_lookup = (
+                bool(bundle.facts) and not calc_trace and plan.answer_shape != AnswerShape.COMPOSITE
+            )
             if calc_trace or bundle.section_chunks:
                 parts.append(self._sec_filings_intro(plan))
             if focus_summary:
                 parts.append(focus_summary)
-            if bundle.section_chunks and narrative_header:
-                parts.append(narrative_header)
-            geopolitical_summary = self._geopolitical_summary_line(plan, bundle)
-            if bundle.section_chunks and geopolitical_summary:
-                parts.append(geopolitical_summary)
             if calc_trace:
                 for line in calc_trace:
                     parts.append(line)
-            for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=2):
-                excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
-                parts.append(f"\n[{chunk.section_title}] {excerpt}")
+            if is_fact_lookup:
+                parts.extend(self._compose_fact_lookup_lines(plan, bundle.facts))
+            else:
+                if bundle.section_chunks and narrative_header:
+                    parts.append(narrative_header)
+                geopolitical_summary = self._geopolitical_summary_line(plan, bundle)
+                if bundle.section_chunks and geopolitical_summary:
+                    parts.append(geopolitical_summary)
+                for chunk in self._prioritize_section_chunks(plan, bundle.section_chunks, limit=2):
+                    excerpt = self._narrative_excerpt(plan, chunk.text, max_chars=300)
+                    parts.append(f"\n[{chunk.section_title}] {excerpt}")
+                if bundle.facts and not calc_trace:
+                    # Also surface facts for COMPOSITE queries alongside the narrative.
+                    parts.extend(self._compose_fact_lookup_lines(plan, bundle.facts))
 
         if not parts:
             parts.append(self._insufficient_evidence_message(plan))
@@ -1395,3 +1414,46 @@ class GroundedAnswerComposer(AnswerService):
                 return "总体下降但中间有波动"
             return "overall downward trend with fluctuations"
         return "整体平稳" if prefer_chinese else "stable"
+
+    def _compose_fact_lookup_lines(
+        self,
+        plan: QueryPlan,
+        facts: list[FactRecord],
+    ) -> list[str]:
+        """Format a deduplicated list of XBRL facts as clean, human-readable lines.
+
+        Used when a query asks for a specific metric in one or more periods and
+        no arithmetic is required — e.g. "Tesla 2023 total revenue".  The result
+        is a compact block like::
+
+            数据结果：
+            总营收 (FY2023): 96,773,000,000.00 USD
+
+        Facts are deduplicated by ``(concept, period_end)`` so comparative-data
+        copies that appear in multiple filings each produce exactly one line.
+        """
+        if self._prefers_chinese(plan):
+            header = "数据结果："
+        else:
+            header = "Fact lookup result:"
+        lines: list[str] = [header]
+        # Restrict to required periods when specified.  Without this guard,
+        # upstream retrieval spanning multiple filings can inject YTD quarterly
+        # facts (e.g. period_end 2023-03-31 / 2023-06-30 / 2023-09-30) that all
+        # render as "FY2023" alongside the genuine full-year value.
+        required_period_set = set(plan.required_periods) if plan.required_periods else None
+        seen: set[tuple[str, str]] = set()
+        for fact in sorted(facts, key=lambda f: (f.concept, f.period_end)):
+            if required_period_set is not None and fact.period_end not in required_period_set:
+                continue
+            key = (fact.concept, str(fact.period_end))
+            if key in seen:
+                continue
+            seen.add(key)
+            period_year = str(fact.period_end)[:4]
+            value_str = f"{fact.value * fact.scale:,.2f} {fact.unit}"
+            display_label = self._concept_display_label(
+                plan, fact.concept, fallback_label=fact.label
+            )
+            lines.append(f"{display_label} (FY{period_year}): {value_str}")
+        return lines

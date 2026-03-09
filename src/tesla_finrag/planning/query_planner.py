@@ -56,8 +56,11 @@ _FY_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
-# Standalone year mention
-_YEAR_RE = re.compile(r"\b(20[12]\d)\b")
+# Standalone year mention.
+# Uses digit-only lookarounds instead of \b because Python's Unicode regex
+# classifies Chinese characters as \w, which breaks word-boundary matching
+# adjacent to digits (e.g. "2023年" has no \b between "3" and "年").
+_YEAR_RE = re.compile(r"(?<!\d)(20[12]\d)(?!\d)")
 
 _CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 _LATIN_CHAR_RE = re.compile(r"[A-Za-z]")

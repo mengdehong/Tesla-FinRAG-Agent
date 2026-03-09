@@ -402,16 +402,11 @@ class EvidenceLinker:
         """
         if concept in _CONCEPT_TABLE_ALIASES:
             aliases = list(_CONCEPT_TABLE_ALIASES[concept])
-            if (
-                concept == "us-gaap:CostOfGoodsAndServicesSold"
-                and (
-                    semantic_scope == SemanticScope.AUTOMOTIVE
-                    or (
-                        original_query
-                        and (
-                            "automotive" in original_query.lower() or "汽车" in original_query
-                        )
-                    )
+            if concept == "us-gaap:CostOfGoodsAndServicesSold" and (
+                semantic_scope == SemanticScope.AUTOMOTIVE
+                or (
+                    original_query
+                    and ("automotive" in original_query.lower() or "汽车" in original_query)
                 )
             ):
                 automotive_aliases = [a for a in aliases if "automotive" in a or "汽车" in a]

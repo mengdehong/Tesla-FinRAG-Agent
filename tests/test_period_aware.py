@@ -33,6 +33,7 @@ from tesla_finrag.models import (
     EvidenceBundle,
     FactRecord,
     PeriodSemantics,
+    QueryLanguage,
     QueryPlan,
     QueryType,
 )
@@ -581,18 +582,40 @@ class TestComposeLimitationText:
     """Tests for GroundedAnswerComposer._compose_limitation_text."""
 
     def test_single_reason(self):
-        text = GroundedAnswerComposer._compose_limitation_text(
-            ["Missing grounded facts for period(s): 2024-12-31"]
+        composer = GroundedAnswerComposer(
+            corpus_repo=InMemoryCorpusRepository(),
+            facts_repo=InMemoryFactsRepository(),
+            calculator=StructuredCalculator(),
+            linker=EvidenceLinker(InMemoryCorpusRepository(), InMemoryFactsRepository()),
+        )
+        plan = QueryPlan(
+            original_query="What is Tesla's cash balance?",
+            normalized_query="cash",
+            query_language=QueryLanguage.ENGLISH,
+        )
+        text = composer._compose_limitation_text(
+            plan, ["Missing grounded facts for period(s): 2024-12-31"]
         )
         assert "Unable to provide a fully grounded answer" in text
         assert "Missing grounded facts" in text
 
     def test_multiple_reasons(self):
+        composer = GroundedAnswerComposer(
+            corpus_repo=InMemoryCorpusRepository(),
+            facts_repo=InMemoryFactsRepository(),
+            calculator=StructuredCalculator(),
+            linker=EvidenceLinker(InMemoryCorpusRepository(), InMemoryFactsRepository()),
+        )
+        plan = QueryPlan(
+            original_query="What is Tesla's cash balance?",
+            normalized_query="cash",
+            query_language=QueryLanguage.ENGLISH,
+        )
         reasons = [
             "Missing grounded facts for period(s): 2024-12-31",
             "Semantics: annual_cumulative vs quarterly_standalone",
         ]
-        text = GroundedAnswerComposer._compose_limitation_text(reasons)
+        text = composer._compose_limitation_text(plan, reasons)
         assert "Unable to provide a fully grounded answer" in text
         # Multi-reason format uses bullet points
         assert "- Missing grounded facts" in text

@@ -65,9 +65,7 @@ _NUMERIC_DATE_RE = re.compile(
     r"(?:截至|截止|as\s+of\s+)?(?P<year>\d{4})\s*[年/-]\s*(?P<month>\d{1,2})\s*[月/-]\s*(?P<day>\d{1,2})\s*日?",
     re.IGNORECASE,
 )
-_CHINESE_YEAR_END_RE = re.compile(
-    r"(?:截至|截止|至)?\s*(?P<year>\d{4})\s*年\s*(?:年末|年底|末|底)"
-)
+_CHINESE_YEAR_END_RE = re.compile(r"(?:截至|截止|至)?\s*(?P<year>\d{4})\s*年\s*(?:年末|年底|末|底)")
 _YEAR_RANGE_RE = re.compile(
     r"""
     (?:

@@ -608,18 +608,12 @@ class GroundedAnswerComposer(AnswerService):
             if self._prefers_chinese(plan):
                 return "现金及现金等价物变动："
             return "Cash and cash equivalents summary:"
-        if (
-            "research and development" in lower
-            or "r&d" in lower
-            or "研发" in plan.original_query
-        ):
+        if "research and development" in lower or "r&d" in lower or "研发" in plan.original_query:
             if self._prefers_chinese(plan):
                 return "研发费用趋势："
             return "Research and development expense trend:"
         if ("revenue" in lower or "营收" in plan.original_query) and (
-            "year over year" in lower
-            or "growth rate" in lower
-            or "同比" in plan.original_query
+            "year over year" in lower or "growth rate" in lower or "同比" in plan.original_query
         ):
             if self._prefers_chinese(plan):
                 return "总营收同比结果："
@@ -952,6 +946,14 @@ class GroundedAnswerComposer(AnswerService):
         Populates ``section_title`` and ``page_number`` when available on the
         source chunk so the UI can render precise provenance coordinates like
         ``Source: [Tesla 2023 10-K, Item 7: MD&A, Page 43]``.
+
+        Post-processing applied before returning:
+        1. Deduplicate by chunk_id first, then by excerpt text — the same XBRL
+           fact (e.g. FY2023 revenue) often appears as comparative data in
+           multiple filings, producing identical excerpts with different doc_ids.
+        2. Sort so citations with both page_number and section_title come first,
+           giving users the most navigable references at the top.
+        3. Cap the result at 8 to keep the UI readable.
         """
         citations: list[Citation] = []
 
@@ -998,7 +1000,36 @@ class GroundedAnswerComposer(AnswerService):
                     )
                 )
 
-        return citations
+        # ── 1. Deduplicate ────────────────────────────────────────────────────
+        # First pass: deduplicate by chunk_id (same chunk retrieved twice).
+        # Second pass: deduplicate by excerpt text — identical XBRL fact values
+        # that appear in multiple filings as comparative data should show once.
+        seen_ids: set = set()
+        seen_excerpts: set[str] = set()
+        deduped: list[Citation] = []
+        for c in citations:
+            if c.chunk_id in seen_ids:
+                continue
+            if c.excerpt in seen_excerpts:
+                continue
+            seen_ids.add(c.chunk_id)
+            seen_excerpts.add(c.excerpt)
+            deduped.append(c)
+
+        # ── 2. Sort: most navigable (page + section) first ───────────────────
+        def _loc_priority(c: Citation) -> int:
+            if c.page_number is not None and c.section_title:
+                return 0  # best: page + section
+            if c.section_title:
+                return 1
+            if c.page_number is not None:
+                return 2
+            return 3  # bare XBRL fact — no PDF location info
+
+        deduped.sort(key=_loc_priority)
+
+        # ── 3. Cap at 8 ───────────────────────────────────────────────────────
+        return deduped[:8]
 
     def _compose_text(
         self,

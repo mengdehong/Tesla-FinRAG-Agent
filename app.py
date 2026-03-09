@@ -239,7 +239,11 @@ def _render_xbrl_charts(bundle: EvidenceBundle) -> None:
         st.info(t(loc, "no_xbrl_data"))
         return
 
-    # Group facts by concept
+    # Group facts by concept, then deduplicate by period_end.
+    # The same period's fact often appears as comparative data across multiple
+    # filings (e.g. FY2023 revenue re-stated in both the 2024 and 2025 10-K).
+    # We keep only the first (chronologically earliest) occurrence per period
+    # so each fiscal year renders exactly one bar.
     concept_data: dict[str, list[dict[str, object]]] = {}
     for fact in bundle.facts:
         concept_data.setdefault(fact.concept, []).append(
@@ -255,19 +259,31 @@ def _render_xbrl_charts(bundle: EvidenceBundle) -> None:
         if len(records) < 1:
             continue
 
-        df = pd.DataFrame(records)
-        df = df.sort_values("period_end")
+        # Sort by period_end then deduplicate, keeping the first entry per period.
+        records_sorted = sorted(records, key=lambda r: r["period_end"])
+        seen_periods: set[str] = set()
+        deduped_records: list[dict[str, object]] = []
+        for r in records_sorted:
+            period_key = str(r["period_end"])
+            if period_key not in seen_periods:
+                seen_periods.add(period_key)
+                # Derive a human-readable fiscal year label (e.g. "FY2023").
+                fy_label = f"FY{period_key[:4]}"
+                deduped_records.append({**r, "fiscal_year": fy_label})
+
+        df = pd.DataFrame(deduped_records)
+        df = df.sort_values("fiscal_year")
 
         display_label = concept_label(loc, concept)
         chart_title = f"{display_label} ({t(loc, 'chart_unit_usd_millions')})"
 
         fig = px.bar(
             df,
-            x="period_end",
+            x="fiscal_year",
             y="value",
             title=chart_title,
             labels={
-                "period_end": t(loc, "chart_period"),
+                "fiscal_year": t(loc, "chart_period"),
                 "value": t(loc, "chart_value"),
             },
             color_discrete_sequence=["#e63946"],
@@ -279,6 +295,7 @@ def _render_xbrl_charts(bundle: EvidenceBundle) -> None:
         )
         fig.update_layout(
             xaxis_title=t(loc, "chart_period"),
+            xaxis={"type": "category"},
             yaxis_title=f"{t(loc, 'chart_value')} ({t(loc, 'chart_unit_usd_millions')})",
             height=350,
             margin={"t": 40, "b": 40, "l": 60, "r": 20},

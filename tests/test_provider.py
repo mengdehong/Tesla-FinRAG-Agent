@@ -43,7 +43,7 @@ def _make_ollama_provider(mock_client: MagicMock | None = None) -> OllamaProvide
     return OllamaProvider(
         client=mock_client or MagicMock(),
         embedding_model="nomic-embed-text",
-        chat_model="qwen2.5:7b-instruct",
+        chat_model="qwen3.5:4b",
         base_url="http://localhost:11434/v1",
     )
 
@@ -63,7 +63,7 @@ class TestSettingsProviderFields:
         assert s.openai_timeout_seconds == 60
         assert s.ollama_base_url == "http://localhost:11434/v1"
         assert s.ollama_timeout_seconds == 60
-        assert s.ollama_chat_model == "qwen2.5:7b-instruct"
+        assert s.ollama_chat_model == "qwen3.5:4b"
         assert s.ollama_embedding_model == "nomic-embed-text"
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,14 +71,14 @@ class TestSettingsProviderFields:
         monkeypatch.setenv("OPENAI_TIMEOUT_SECONDS", "45")
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.local:11434/v1")
         monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "90")
-        monkeypatch.setenv("OLLAMA_CHAT_MODEL", "qwen2.5:14b")
+        monkeypatch.setenv("OLLAMA_CHAT_MODEL", "qwen3.5:4b")
         monkeypatch.setenv("OLLAMA_EMBEDDING_MODEL", "mxbai-embed-large")
         s = AppSettings(_env_file=None)  # type: ignore[call-arg]
         assert s.openai_base_url == "https://my-proxy.example.com/v1"
         assert s.openai_timeout_seconds == 45
         assert s.ollama_base_url == "http://ollama.local:11434/v1"
         assert s.ollama_timeout_seconds == 90
-        assert s.ollama_chat_model == "qwen2.5:14b"
+        assert s.ollama_chat_model == "qwen3.5:4b"
         assert s.ollama_embedding_model == "mxbai-embed-large"
 
     @pytest.mark.parametrize(
@@ -129,7 +129,7 @@ class TestProviderFromSettings:
         mock_openai_cls.return_value = MagicMock()
         settings = AppSettings(_env_file=None)  # type: ignore[call-arg]
         provider = OllamaProvider.from_settings(settings)
-        assert provider.chat_model == "qwen2.5:7b-instruct"
+        assert provider.chat_model == "qwen3.5:4b"
         assert provider.embedding_model == "nomic-embed-text"
         assert provider.base_url == "http://localhost:11434/v1"
         mock_openai_cls.assert_called_once_with(

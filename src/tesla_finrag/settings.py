@@ -64,7 +64,7 @@ class AppSettings(BaseSettings):
         description="Base URL for the local Ollama OpenAI-compatible endpoint.",
     )
     ollama_chat_model: str = Field(
-        "qwen2.5:7b-instruct",
+        "qwen3.5:4b",
         description="Default Ollama chat model used for local answer generation.",
     )
     ollama_embedding_model: str = Field(

@@ -62,7 +62,7 @@ changes without adding capability.
 ### Decision: Ollama uses the OpenAI-compatible endpoint with explicit defaults
 `OllamaProvider` will use the official `openai` SDK against
 `http://localhost:11434/v1`, with defaults
-`qwen2.5:7b-instruct` for chat and `nomic-embed-text` for embeddings. The SDK
+`qwen3.5:4b` for chat and `nomic-embed-text` for embeddings. The SDK
 will receive a fixed placeholder API key (`ollama`) so the local path does not
 require extra credentials.
 

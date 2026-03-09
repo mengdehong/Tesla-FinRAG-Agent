@@ -19,7 +19,7 @@ uv sync
 
 # 2. Start Ollama for local mode (default)
 ollama serve
-ollama pull qwen2.5:7b-instruct
+ollama pull qwen3.5:4b  
 ollama pull nomic-embed-text
 
 # 3. Run ingestion to build the processed corpus and LanceDB vector index

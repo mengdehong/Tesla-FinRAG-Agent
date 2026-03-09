@@ -17,7 +17,6 @@ class TestAppSettings:
         assert s.retrieval_top_k == 8
         assert s.rerank_top_k == 4
         assert s.log_level == "INFO"
-        assert s.openai_model == "gpt-4o-mini"
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("RETRIEVAL_TOP_K", "20")

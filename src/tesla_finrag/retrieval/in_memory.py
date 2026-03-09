@@ -11,18 +11,14 @@ from datetime import date
 from uuid import UUID
 
 from tesla_finrag.models import (
-    EvidenceBundle,
     FactRecord,
     FilingDocument,
-    QueryPlan,
     SectionChunk,
     TableChunk,
 )
 from tesla_finrag.repositories import (
     CorpusRepository,
-    EvidenceRepository,
     FactsRepository,
-    QueryPlanRepository,
     RetrievalStore,
 )
 
@@ -174,42 +170,3 @@ class InMemoryRetrievalStore(RetrievalStore):
         scored = [(chunk, _cosine_similarity(query_embedding, emb)) for chunk, emb in candidates]
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:top_k]
-
-
-# ---------------------------------------------------------------------------
-# Evidence repository
-# ---------------------------------------------------------------------------
-
-
-class InMemoryEvidenceRepository(EvidenceRepository):
-    """In-memory implementation of :class:`EvidenceRepository`."""
-
-    def __init__(self) -> None:
-        self._bundles: dict[UUID, EvidenceBundle] = {}
-
-    def save_bundle(self, bundle: EvidenceBundle) -> None:
-        self._bundles[bundle.bundle_id] = bundle
-
-    def get_bundle(self, bundle_id: UUID) -> EvidenceBundle | None:
-        return self._bundles.get(bundle_id)
-
-    def get_bundles_for_plan(self, plan_id: UUID) -> list[EvidenceBundle]:
-        return [b for b in self._bundles.values() if b.plan_id == plan_id]
-
-
-# ---------------------------------------------------------------------------
-# Query plan repository
-# ---------------------------------------------------------------------------
-
-
-class InMemoryQueryPlanRepository(QueryPlanRepository):
-    """In-memory implementation of :class:`QueryPlanRepository`."""
-
-    def __init__(self) -> None:
-        self._plans: dict[UUID, QueryPlan] = {}
-
-    def save_plan(self, plan: QueryPlan) -> None:
-        self._plans[plan.plan_id] = plan
-
-    def get_plan(self, plan_id: UUID) -> QueryPlan | None:
-        return self._plans.get(plan_id)

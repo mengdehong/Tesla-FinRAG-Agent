@@ -1,7 +1,7 @@
 [
   {
     "case_id": "FA-001",
-    "question_id": "BQ-002",
+    "question_id": "BQ-003",
     "question": "What was Tesla's gross profit margin for FY2023? Show how gross profit divided by total revenue produces the margin percentage.",
     "expected_answer": "Gross profit was $17.66B on revenue of $96.77B, producing a gross margin of approximately 18.2%.",
     "actual_answer": "Based on Tesla's SEC filings:\n\nus-gaap:Revenues: 96,773,000,000.00\nus-gaap:GrossProfit: 17,660,000,000.00\nRatio: 96,773,000,000.00 / 17,660,000,000.00 = 5.4798\n\nResult: 5.48",
@@ -10,7 +10,7 @@
     "root_cause": "The structured calculator divided Revenue by GrossProfit instead of GrossProfit by Revenue. The ratio direction in the calculation template is inverted for gross-margin queries.",
     "mitigation": "Fix the ratio calculation logic to place the margin numerator (GrossProfit) over the denominator (Revenue) when the query plan indicates a margin-type calculation. Add a unit-test regression for margin direction.",
     "severity": "critical",
-    "baseline_run_id": "6307bfc151b1"
+    "baseline_run_id": "56e373d19037"
   },
   {
     "case_id": "FA-002",
@@ -23,7 +23,7 @@
     "root_cause": "The pipeline requires all required_concepts to resolve in the fact store before attempting a composite text+table answer. When numeric facts are missing, it does not fall back to PDF-extracted table chunks or narrative sections.",
     "mitigation": "Allow hybrid answers that combine available narrative chunks with partial numeric evidence. Add fallback to table-chunk retrieval when XBRL facts are unavailable for a concept.",
     "severity": "major",
-    "baseline_run_id": "6307bfc151b1"
+    "baseline_run_id": "56e373d19037"
   },
   {
     "case_id": "FA-003",
@@ -36,11 +36,11 @@
     "root_cause": "The XBRL companyfacts ingestion does not index the ResearchAndDevelopmentExpense concept. The fact store covers a limited set of high-level line items (Revenues, GrossProfit, OperatingIncomeLoss, FreeCashFlow) but not R&D.",
     "mitigation": "Expand the XBRL concept allowlist during ingestion to include ResearchAndDevelopmentExpense and other commonly queried P&L line items. As a fallback, retrieve the relevant table chunks from PDF-parsed filings.",
     "severity": "major",
-    "baseline_run_id": "6307bfc151b1"
+    "baseline_run_id": "56e373d19037"
   },
   {
     "case_id": "FA-004",
-    "question_id": "BQ-005",
+    "question_id": "BQ-004",
     "question": "Compare Tesla's operating income across Q1 2023, Q2 2023, and Q3 2023. Which quarter had the highest operating margin?",
     "expected_answer": "Q1 2023 operating income was ~$2.66B, Q2 was ~$2.40B, Q3 was ~$1.76B. Q1 had the highest operating margin at approximately 11.4%.",
     "actual_answer": "Based on Tesla's SEC filings:\n\nDenominator not found: custom:OperatingMarginPercent\n\nResult: 0.00",
@@ -49,11 +49,11 @@
     "root_cause": "The query planner creates a single ratio query with a non-existent concept instead of decomposing the multi-quarter comparison into separate per-period lookups for OperatingIncomeLoss and Revenue. No logic exists to derive operating margin from two known concepts.",
     "mitigation": "Decompose multi-quarter comparison questions into one sub-query per quarter. Compute operating margin as OperatingIncomeLoss/Revenue per period rather than looking up a pre-computed margin concept.",
     "severity": "critical",
-    "baseline_run_id": "6307bfc151b1"
+    "baseline_run_id": "56e373d19037"
   },
   {
     "case_id": "FA-005",
-    "question_id": "BQ-006",
+    "question_id": "BQ-003",
     "question": "What was Tesla's cash and cash equivalents position as of December 31, 2023, and how did it compare to December 31, 2022?",
     "expected_answer": "Cash and cash equivalents were approximately $16.40B (Dec 2023) vs $16.25B (Dec 2022).",
     "actual_answer": "Insufficient evidence found to answer this question. The available filing data did not contain grounded numeric facts for the requested metric.",
@@ -62,11 +62,11 @@
     "root_cause": "The XBRL ingestion does not index CashAndCashEquivalentsAtCarryingValue. Balance-sheet line items are outside the current fact-store scope.",
     "mitigation": "Expand XBRL concept coverage to include key balance-sheet items (cash, total assets, total liabilities). As a fallback, use table-chunk retrieval to locate balance-sheet data in parsed 10-K filings.",
     "severity": "major",
-    "baseline_run_id": "6307bfc151b1"
+    "baseline_run_id": "56e373d19037"
   },
   {
     "case_id": "FA-006",
-    "question_id": "BQ-007",
+    "question_id": "BQ-004",
     "question": "Calculate Tesla's free cash flow for FY2023 by subtracting capital expenditures from operating cash flow. Show each step.",
     "expected_answer": "Operating cash flow FY2023: $13.26B. Capital expenditures FY2023: $8.88B. Free cash flow = $13.26B - $8.88B = $4.38B.",
     "actual_answer": "Based on Tesla's SEC filings:\n\nFree Cash Flow: 4,358,000,000.00 USD (period ending 2023-12-31)\n\nResult: 4,358,000,000.00",
@@ -75,6 +75,6 @@
     "root_cause": "When a pre-computed aggregate fact exists, the calculator returns it directly without decomposing into sub-steps. The expected_answer_contains keyword 'capital expenditure' is absent because the step-by-step breakdown was never generated.",
     "mitigation": "For calculation-type queries that request explicit steps, prefer decomposed computation over pre-computed aggregates. Retrieve both the aggregate and component facts so the answer can show the arithmetic trace.",
     "severity": "major",
-    "baseline_run_id": "6307bfc151b1"
+    "baseline_run_id": "56e373d19037"
   }
 ]

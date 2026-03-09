@@ -1,7 +1,7 @@
 # Delivery Readiness Report
 
-> **Baseline run:** `6307bfc151b1` (2026-03-07)
-> **Pass rate:** 3/9 (33.33%)
+> **Baseline run:** `56e373d19037` (2026-03-09)
+> **Pass rate:** 7/9 (77.78%)
 
 ## 1. Architecture Overview
 
@@ -84,28 +84,28 @@ The current fact store indexes the following concepts:
 
 ## 3. Benchmark Outcomes
 
-### Latest Baseline (run `6307bfc151b1`, 2026-03-07)
+### Latest Baseline (run `56e373d19037`, 2026-03-09)
 
 | Metric | Value |
 |---|---|
 | Total questions | 9 |
-| Pass | 3 |
-| Fail | 6 |
+| Pass | 7 |
+| Fail | 2 |
 | Error | 0 |
-| Pass rate | **33.33%** |
-| Avg latency | 0.34 ms |
+| Pass rate | **77.78%** |
+| Avg latency | 17,357.63 ms |
 
 ### Per-Question Results
 
 | ID | Category | Difficulty | Status | Notes |
 |---|---|---|---|---|
 | BQ-001 | cross_year | medium | PASS | Revenue YoY comparison: correctly computed 18.80% growth |
-| BQ-002 | calculation | medium | FAIL | Gross margin ratio inverted (Revenue/GrossProfit instead of GrossProfit/Revenue) |
-| BQ-003 | text_plus_table | hard | FAIL | INSUFFICIENT_EVIDENCE — CostOfGoodsAndServicesSold not in fact store |
-| BQ-004 | time_sequenced | hard | FAIL | INSUFFICIENT_EVIDENCE — ResearchAndDevelopmentExpense not in fact store |
-| BQ-005 | multi_period | hard | FAIL | Looked up non-existent concept `custom:OperatingMarginPercent` |
-| BQ-006 | balance_sheet | medium | FAIL | INSUFFICIENT_EVIDENCE — CashAndCashEquivalentsAtCarryingValue not in fact store |
-| BQ-007 | calculation | hard | FAIL | Correct FCF value but no step-by-step decomposition shown |
+| BQ-002 | calculation | medium | PASS | Gross margin correctly computed as 18.25% |
+| BQ-003 | text_plus_table | hard | FAIL | Narrative evidence found, but numeric COGS component is still not grounded for FY2022/FY2023 |
+| BQ-004 | time_sequenced | hard | FAIL | Trend answer only covers FY2021 and FY2024 endpoints; benchmark requires FY2021-FY2024 period coverage |
+| BQ-005 | multi_period | hard | PASS | Quarterly operating margin ranking now computed across Q1-Q3 2023 |
+| BQ-006 | balance_sheet | medium | PASS | Cash and cash equivalents comparison between 2022-12-31 and 2023-12-31 now grounded |
+| BQ-007 | calculation | hard | PASS | Free cash flow answer now includes the requested step-by-step decomposition |
 | BQ-008 | cross_year | easy | PASS | Simple FY2023 revenue lookup |
 | BQ-009 | calculation | easy | PASS | Simple FY2023 free cash flow lookup |
 
@@ -114,26 +114,25 @@ The current fact store indexes the following concepts:
 The system reliably handles:
 - **Single-period fact lookups** (BQ-008, BQ-009)
 - **Two-period comparison with percentage change** (BQ-001)
+- **Ratio calculations with grounded facts** (BQ-002)
+- **Multi-period ranking across quarterly facts** (BQ-005)
+- **Step-traced financial decomposition** (BQ-007)
 
 ### Failure Patterns
 
-See `data/evaluation/failure_analyses.json` (6 structured analyses, all anchored to baseline run `6307bfc151b1`).
+See `data/evaluation/failure_analyses.json` for the original six structured analyses anchored to the older baseline run `6307bfc151b1`. The latest baseline `56e373d19037` reduces the remaining failures to BQ-003 and BQ-004.
 
 | Pattern | Cases | Severity |
 |---|---|---|
-| XBRL concept not indexed | BQ-003, BQ-004, BQ-006 | major |
-| Calculation direction error | BQ-002 | critical |
-| Multi-quarter decomposition missing | BQ-005 | critical |
-| Pre-computed aggregate without step trace | BQ-007 | major |
+| Missing grounded numeric coverage in mixed narrative+numeric questions | BQ-003 | major |
+| Incomplete full-period coverage for time-sequenced answers | BQ-004 | major |
 
 ## 4. Known Limitations
 
-1. **Limited XBRL concept coverage**: Only 5 concepts are indexed. Queries requiring R&D, COGS, or balance-sheet items return `INSUFFICIENT_EVIDENCE`.
-2. **Ratio calculation direction**: The structured calculator can invert numerator/denominator for margin-type calculations (see FA-001).
-3. **No multi-quarter decomposition**: Queries comparing multiple quarters are not decomposed into per-quarter sub-queries (see FA-004).
-4. **No fallback from XBRL to table chunks**: When an XBRL fact is missing, the pipeline does not attempt to retrieve the value from PDF-extracted tables.
-5. **Step-by-step trace suppressed for pre-computed facts**: When an aggregate fact exists (e.g., FreeCashFlow), the calculator returns it directly without showing component values.
-6. **PDF table OCR quality**: Some PDF-extracted tables contain OCR artifacts (digit/letter confusion), though the current pipeline prefers XBRL facts for numeric answers.
+1. **Mixed narrative + numeric grounding is still incomplete**: BQ-003 can cite supply-chain narrative text, but the numeric COGS portion is still not fully grounded for FY2022/FY2023.
+2. **Time-sequenced answers need stricter full-period coverage**: BQ-004 currently summarizes endpoint change, but the benchmark expects explicit support across FY2021, FY2022, FY2023, and FY2024.
+3. **No reliable fallback from missing facts to table-grounded numeric recovery**: When a required fact is absent or not period-complete, the pipeline still struggles to recover the numeric portion from table chunks.
+4. **PDF table OCR quality**: Some PDF-extracted tables contain OCR artifacts (digit/letter confusion), though the current pipeline prefers XBRL facts for numeric answers.
 
 ## 5. Demo & Validation Guidance
 
@@ -196,6 +195,8 @@ These questions currently pass the benchmark and produce good answers:
 1. "What was Tesla's total revenue in FY2023?" (BQ-008)
 2. "What was Tesla's free cash flow in FY2023?" (BQ-009)
 3. "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?" (BQ-001)
+4. "What was Tesla's gross profit margin for FY2023? Show how gross profit divided by total revenue produces the margin percentage." (BQ-002)
+5. "Compare Tesla's operating income across Q1 2023, Q2 2023, and Q3 2023. Which quarter had the highest operating margin?" (BQ-005)
 
 ## 6. Artifact Locations
 

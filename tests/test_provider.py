@@ -399,7 +399,7 @@ class TestFakeClientRemoteExecution:
         assert answer.retrieval_debug["embedding_provider"] == "shared-indexing-backend"
         assert answer.retrieval_debug["answer_provider"] == "openai-compatible"
         assert answer.retrieval_debug["answer_model"] == "gpt-4o-mini"
-        assert answer.retrieval_debug["local_answer_fallback_used"] is True
+        assert answer.retrieval_debug["composite_local_fallback_used"] is True
         assert mock_client.embeddings.create.call_count == 0
         assert mock_client.chat.completions.create.call_count == 1
 

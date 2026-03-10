@@ -492,10 +492,10 @@ class WorkbenchPipeline:
             )
             raise
 
-        local_answer_fallback_used = False
+        composite_local_fallback_used = False
         if self._should_use_local_answer(plan, bundle, remote_text, local_answer):
             remote_text = local_answer.answer_text
-            local_answer_fallback_used = True
+            composite_local_fallback_used = True
 
         answer = AnswerPayload(
             plan_id=local_answer.plan_id,
@@ -506,8 +506,8 @@ class WorkbenchPipeline:
             retrieval_debug=local_answer.retrieval_debug,
             confidence=local_answer.confidence,
         )
-        if local_answer_fallback_used:
-            answer.retrieval_debug["local_answer_fallback_used"] = True
+        if composite_local_fallback_used:
+            answer.retrieval_debug["composite_local_fallback_used"] = True
         answer.retrieval_debug.update(
             self._build_retrieval_debug(
                 provider_info=provider_info,
@@ -640,7 +640,8 @@ class WorkbenchPipeline:
             narrative_cues = [
                 cue
                 for cue in cues
-                if cue in {
+                if cue
+                in {
                     "supply chain",
                     "供应链",
                     "risk factors",

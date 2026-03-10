@@ -152,7 +152,7 @@ def table_chunks_from_analysis(
             headers, rows = _clean_table(raw_table)
             if len(rows) < min_rows:
                 continue
-                
+
             # Filter out false-positive layout artifacts (1-column tables)
             max_cols = max((len([c for c in r if c]) for r in [headers] + rows), default=0)
             if max_cols < 2:

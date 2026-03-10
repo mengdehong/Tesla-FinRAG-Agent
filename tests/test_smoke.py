@@ -91,7 +91,7 @@ class TestLocalModeRuntime:
 
     def test_local_mode_answers_question(self) -> None:
         corpus_repo, facts_repo = _seed_demo_repositories()
-        provider = _make_ollama_provider("Local Ollama revenue answer.")
+        provider = _make_ollama_provider("Local Ollama revenue result answer.")
         pipeline = WorkbenchPipeline(
             corpus_repo=corpus_repo,
             facts_repo=facts_repo,

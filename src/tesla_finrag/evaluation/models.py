@@ -241,6 +241,8 @@ class FailureAnalysis(BaseModel):
     root_cause: str = Field(description="Why the system produced this output.")
     mitigation: str = Field(description="Concrete improvement direction.")
     severity: Severity
+    status: str = "open"
+    resolved_run_id: str | None = None
     baseline_run_id: str = Field(
         description="Run ID of the baseline from which this analysis was derived.",
     )

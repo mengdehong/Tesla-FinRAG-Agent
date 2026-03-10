@@ -1475,19 +1475,26 @@ class TestBaselineDiscoverability:
         failed_question_ids = {
             question_id for question_id, passed in baseline.question_pass_fail.items() if not passed
         }
-        analyzed_question_ids = {fa.question_id for fa in analyses}
 
         for fa in analyses:
-            assert fa.baseline_run_id == baseline.run_id, (
-                f"Failure analysis {fa.case_id} must reference baseline {baseline.run_id}"
-            )
             assert fa.question_id in baseline.question_pass_fail, (
                 f"Failure analysis {fa.case_id} references unknown question {fa.question_id}"
             )
-            assert baseline.question_pass_fail[fa.question_id] is False, (
-                f"Failure analysis {fa.case_id} must reference a failed baseline question"
-            )
-        assert analyzed_question_ids == failed_question_ids, (
+            if fa.status == "resolved" and fa.resolved_run_id == baseline.run_id:
+                assert baseline.question_pass_fail[fa.question_id] is True, (
+                    f"Failure analysis {fa.case_id} is marked resolved "
+                    "but fails in current baseline."
+                )
+            else:
+                assert fa.baseline_run_id == baseline.run_id, (
+                    f"Failure analysis {fa.case_id} must reference baseline {baseline.run_id}"
+                )
+                assert baseline.question_pass_fail[fa.question_id] is False, (
+                    f"Failure analysis {fa.case_id} must reference a failed baseline question"
+                )
+
+        unresolved_question_ids = {fa.question_id for fa in analyses if fa.status != "resolved"}
+        assert unresolved_question_ids == failed_question_ids, (
             "Failure analyses must cover every failed question in the latest baseline"
         )
 

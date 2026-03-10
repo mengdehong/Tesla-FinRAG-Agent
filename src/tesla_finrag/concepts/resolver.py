@@ -235,8 +235,7 @@ class SemanticConceptResolver:
             concept=concept,
             confidence=1.0,
             rationale=(
-                "Accepted by the curated safe-equivalent override for common cost-of-sales "
-                "phrases."
+                "Accepted by the curated safe-equivalent override for common cost-of-sales phrases."
             ),
             candidates=[
                 ConceptCandidate(

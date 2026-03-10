@@ -278,11 +278,7 @@ class FinancialQaAgent:
         missing_periods = list(linked.metadata.get("missing_periods", []))
         missing_concepts_by_period = dict(linked.metadata.get("missing_concepts_by_period", {}))
         missing_concepts = sorted(
-            {
-                concept
-                for concepts in missing_concepts_by_period.values()
-                for concept in concepts
-            }
+            {concept for concepts in missing_concepts_by_period.values() for concept in concepts}
         )
         for concept in missing_concepts:
             for alternative in plan.alternative_concepts:
@@ -373,9 +369,7 @@ class FinancialQaAgent:
                 update={
                     "required_concepts": updated,
                     "alternative_concepts": [
-                        concept
-                        for concept in plan.alternative_concepts
-                        if concept != new_concept
+                        concept for concept in plan.alternative_concepts if concept != new_concept
                     ],
                 }
             )
@@ -460,11 +454,10 @@ class FinancialQaAgent:
                     system_prompt=(
                         "Extract a numeric financial value from Tesla filing tables. "
                         "Return JSON with "
-                        "value and label. If not found, return {\"value\": null}."
+                        'value and label. If not found, return {"value": null}.'
                     ),
                     user_prompt=(
-                        f"Concept: {concept}\nPeriod: {period_key}\n\n"
-                        f"Table text:\n{table_text}"
+                        f"Concept: {concept}\nPeriod: {period_key}\n\nTable text:\n{table_text}"
                     ),
                     json_schema={"type": "object", "properties": {"value": {}, "label": {}}},
                 )

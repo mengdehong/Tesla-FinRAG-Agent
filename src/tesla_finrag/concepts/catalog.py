@@ -104,9 +104,9 @@ def build_companyfacts_catalog(
             description = concept_data.get("description") or ""
             aliases = _dedupe(
                 [
-                    * _label_aliases(label),
-                    * _camel_case_aliases(local_name),
-                    * _CURATED_ALIASES.get(concept, []),
+                    *_label_aliases(label),
+                    *_camel_case_aliases(local_name),
+                    *_CURATED_ALIASES.get(concept, []),
                 ]
             )
             entries.append(

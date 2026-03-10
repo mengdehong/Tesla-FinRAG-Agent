@@ -1,96 +1,41 @@
-# Tesla FinRAG
+# Tesla FinRAG Agent
 
-Financial RAG workspace for Tesla SEC filings (`10-K` and `10-Q`).
+一个面向 Tesla 10-K / 10-Q 财报的金融问答 RAG 项目，关注跨年份检索、财务计算，以及表格与叙述信息的联合引用。
 
-The repository is currently bootstrapped with the shared models, settings,
-service boundaries, and validation commands needed for downstream ingestion,
-retrieval, and UI work.
+### 阅读入口
 
-## Requirements
+1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)    看系统分层、核心模块、数据流设计。
+2. [docs/DELIVERY.md](docs/DELIVERY.md)   看当前交付结果、评测表现、阶段性结论。
+3. [docs/DECISION.md](docs/DECISION.md)   看关键技术选型与设计取舍。
 
-- Python 3.12
-- `uv`
+### 这个项目解决什么问题
 
-## Quick Start
+- 面向上市公司财报问答，支持 Tesla 10-K / 10-Q 多年份语料。
+- 处理跨文档问题，而不局限于单篇文档中的局部事实。
+- 处理财务计算类问题，而不只生成自然语言回答。
+- 结合表格数据与管理层叙述，保留答案来源。
+
+### 项目内容
+
+- 设计财报解析与索引链路，处理文本块、表格块和来源元数据。
+- 实现混合检索能力，兼顾财务术语精确命中与语义召回。
+- 构建财务问答流程，覆盖检索、计算、证据组织和答案生成。
+- 建立评测与失败分析流程，用复杂问题集检查系统瓶颈。
+
+### 在线演示
+演示地址：
+
+### 代码入口
+
+- [src/tesla_finrag/](src/tesla_finrag/)：核心源码
+- [tests/](tests/)：单元测试与集成测试
+- [data/raw/](data/raw/)：原始财报数据
+
+### 快速验证
 
 ```bash
-# 1. Install dependencies
+git clone https://github.com/mengdehong/Tesla-FinRAG-Agent.git --depth=1
+cd Tesla-FinRAG-Agent
 uv sync
-
-# 2. Start Ollama for local mode (default)
-ollama serve
-ollama pull qwen2.5:1.5b
-ollama pull nomic-embed-text
-
-# 3. Run ingestion to build the processed corpus and LanceDB vector index
-uv run python -m tesla_finrag ingest
-
-# 4. Launch the Streamlit workbench
 uv run streamlit run app.py
-
-# Or ask a question directly from the CLI
-uv run python -m tesla_finrag ask --question "What was Tesla's total revenue in FY2023?"
 ```
-
-If `data/processed/` is missing or incomplete, the runtime surfaces will
-tell you exactly which command to run to fix it.
-
-The `ingest` command now also builds a persistent **LanceDB** vector index
-under `data/processed/lancedb/`.  Runtime queries and the Streamlit workbench
-use this persisted index for semantic retrieval instead of rebuilding an
-in-memory vector store on every startup.
-
-## Provider Modes
-
-- `local` is the default mode and uses Ollama for grounded answer narration.
-- Retrieval embeddings come from the shared indexing backend configured by
-  `INDEXING_EMBEDDING_*`; by default that is also Ollama at `http://localhost:11434/v1`.
-- `openai-compatible` is the explicit remote mode and continues to use the
-  configured `OPENAI_*` settings for answer narration only.
-- If your remote environment uses a SOCKS proxy, the project now installs
-  `httpx[socks]` as part of the runtime dependency set.
-
-## Ingestion Notes
-
-- `ingest` now reuses unchanged filing artifacts and unchanged `companyfacts` output across reruns.
-- The completion summary distinguishes `Reprocessed`, `Reused`, and `Failed filings`, plus whether facts were reused.
-- A run is only considered successful if the LanceDB index was built successfully; indexing failures now fail `ingest`.
-- LanceDB now stores segmented vector rows with source-chunk lineage metadata; indexed row count can exceed processed chunk count.
-- Automatic parallelism now sizes itself to the filings that still need parsing rather than the total manifest size.
-- On this repo's raw corpus, ingestion is expected to be minute-scale rather than instant because PDF parsing is CPU-heavy.
-- If you want the most conservative debugging path, force sequential mode:
-
-```bash
-uv run python -m tesla_finrag ingest --workers 1
-```
-
-- If you need a guaranteed full rebuild, clear `data/processed/` and rerun ingestion:
-
-```bash
-rm -rf data/processed
-uv run python -m tesla_finrag ingest
-```
-
-- If you only need to migrate the LanceDB schema, rebuild just the index:
-
-```bash
-rm -rf data/processed/lancedb
-uv run python -m tesla_finrag ingest
-```
-
-## Validation
-
-```bash
-uv run pytest -q
-uv run ruff check .
-```
-
-## Layout
-
-- `src/tesla_finrag/`: application package and shared contracts
-- `tests/`: baseline model, settings, and interface tests
-- `data/raw/`: immutable Tesla filing source inputs
-- `data/processed/`: normalized artifacts produced by `ingest` (not committed)
-  - `data/processed/lancedb/`: persistent vector index for semantic retrieval
-- `docs/`: developer-facing documentation
-- `openspec/`: change proposals, specs, and task tracking

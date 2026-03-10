@@ -12,7 +12,7 @@
     "severity": "critical",
     "status": "resolved",
     "baseline_run_id": "56e373d19037",
-    "resolved_run_id": "ba83cfd6354e"
+    "resolved_run_id": "1e6253c3c6fd"
   },
   {
     "case_id": "FA-002",
@@ -27,7 +27,7 @@
     "severity": "major",
     "status": "resolved",
     "baseline_run_id": "56e373d19037",
-    "resolved_run_id": "ba83cfd6354e"
+    "resolved_run_id": "1e6253c3c6fd"
   },
   {
     "case_id": "FA-003",
@@ -42,7 +42,7 @@
     "severity": "major",
     "status": "resolved",
     "baseline_run_id": "56e373d19037",
-    "resolved_run_id": "ba83cfd6354e"
+    "resolved_run_id": "1e6253c3c6fd"
   },
   {
     "case_id": "FA-004",
@@ -57,7 +57,7 @@
     "severity": "critical",
     "status": "resolved",
     "baseline_run_id": "56e373d19037",
-    "resolved_run_id": "ba83cfd6354e"
+    "resolved_run_id": "1e6253c3c6fd"
   },
   {
     "case_id": "FA-005",
@@ -72,7 +72,7 @@
     "severity": "major",
     "status": "resolved",
     "baseline_run_id": "56e373d19037",
-    "resolved_run_id": "ba83cfd6354e"
+    "resolved_run_id": "1e6253c3c6fd"
   },
   {
     "case_id": "FA-006",
@@ -87,6 +87,6 @@
     "severity": "major",
     "status": "resolved",
     "baseline_run_id": "56e373d19037",
-    "resolved_run_id": "ba83cfd6354e"
+    "resolved_run_id": "1e6253c3c6fd"
   }
 ]

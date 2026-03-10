@@ -8,8 +8,10 @@ coverage gaps explicitly.
 from __future__ import annotations
 
 import json as jsonlib
+import multiprocessing as mp
 import os
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -481,7 +483,10 @@ def _run_filing_ingestion_jobs(
         return all_section_chunks, all_table_chunks, failed_details, diagnostics_agg
 
     futures: dict[Future[FilingIngestionResult], FilingDocument] = {}
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    # LanceDB is not fork-safe on Linux, and this module imports the store in the
+    # parent process. Use spawn workers explicitly so filing parsing can still run
+    # in parallel without inheriting unsafe state.
+    with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as executor:
         for index, filing in enumerate(filings, start=1):
             future = executor.submit(
                 _ingest_single_filing,
@@ -913,7 +918,7 @@ def run_pipeline(
                 workers=worker_count,
             )
         )
-    except (OSError, PermissionError) as exc:
+    except (BrokenProcessPool, OSError, PermissionError) as exc:
         if worker_count <= 1:
             raise
         logger.warning(

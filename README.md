@@ -23,7 +23,18 @@
 - 建立评测与失败分析流程，用复杂问题集检查系统瓶颈。
 
 ### 在线演示
-演示地址：
+演示地址：https://finrag.wenmou.site/
+<img src="docs/images/demo1.png" alt="image-20260310140658349|" style="zoom:25%;" />
+
+- What was Tesla's total revenue in FY2023?
+- Tesla 2022 Q3 的总营收是多少？
+- How much did Tesla's total revenue grow from FY2022 to FY2023?
+- Which was higher, Tesla's total revenue in FY2023 or FY2024?
+- Tesla 2022 Q3 面临了哪些供应链挑战？
+
+**局限性：**
+- 由于服务器资源限制，仅提供remote (OpenAI-compatible) 模式的在线演示
+- 由于当前输入处理策略的尚未处理完全，优先使用英文提问，以获得更好的结果。且因为Planner模块的设计，延迟较高，正在优化中。   
 
 ### 代码入口
 
@@ -31,11 +42,13 @@
 - [tests/](tests/)：单元测试与集成测试
 - [data/raw/](data/raw/)：原始财报数据
 
-### 快速验证
+### 本地验证
+请在.env文件中设置好环境变量（如OPENAI_API_KEY），然后运行以下命令：
 
 ```bash
 git clone https://github.com/mengdehong/Tesla-FinRAG-Agent.git --depth=1
 cd Tesla-FinRAG-Agent
 uv sync
+uv run python -m tesla_finrag ingest 
 uv run streamlit run app.py
 ```

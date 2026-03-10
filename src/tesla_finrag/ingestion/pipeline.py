@@ -8,8 +8,8 @@ coverage gaps explicitly.
 from __future__ import annotations
 
 import json as jsonlib
-import os
 import multiprocessing as mp
+import os
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass

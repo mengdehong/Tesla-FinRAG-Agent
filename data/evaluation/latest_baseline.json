@@ -1,7 +1,7 @@
 {
   "run_id": "1e6253c3c6fd",
   "timestamp": "2026-03-10T02:09:45.049145Z",
-  "run_file": "data/evaluation/runs/run_20260310_020945_1e6253c3c6fd.json",
+  "run_file": "data/evaluation/latest_baseline_run.json",
   "summary": {
     "total": 19,
     "pass_count": 19,

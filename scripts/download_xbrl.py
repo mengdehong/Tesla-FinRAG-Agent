@@ -11,7 +11,7 @@ def fetch_tesla_companyfacts() -> dict | None:
 
     # 2. 构造符合 SEC 规范的 Header（需包含可联系邮箱）
     headers = {
-        "User-Agent": "TeslaFinRAG-Agent mdh2018534846@gmail.com",
+        "User-Agent": "TeslaFinRAG-Agent liamari6zro1xdxf8ds@gmail.com",
         "Accept-Encoding": "gzip, deflate",
     }
 

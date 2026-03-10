@@ -1,0 +1,277 @@
+[
+  {
+    "question_id": "BQ-001",
+    "question": "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?",
+    "category": "cross_year",
+    "difficulty": "medium",
+    "expected_answer_contains": ["81,462", "96,773", "18.80"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "pct_change",
+      "expected_value": 18.80,
+      "tolerance": 0.02
+    }
+  },
+  {
+    "question_id": "BQ-002",
+    "question": "What was Tesla's gross profit margin for FY2023? Show how gross profit divided by total revenue produces the margin percentage.",
+    "category": "calculation",
+    "difficulty": "medium",
+    "expected_answer_contains": ["gross profit", "margin"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "ratio",
+      "numerator": "us-gaap:GrossProfit",
+      "denominator": "us-gaap:Revenues",
+      "expected_value": 18.25,
+      "tolerance": 0.05
+    }
+  },
+  {
+    "question_id": "BQ-003",
+    "question": "What supply chain risk factors did Tesla mention in its 2023 10-K, and how did cost of automotive revenue change between FY2022 and FY2023?",
+    "category": "text_plus_table",
+    "difficulty": "hard",
+    "expected_answer_contains": ["supply chain", "cost"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_narrative_terms": ["supply chain"]
+  },
+  {
+    "question_id": "BQ-004",
+    "question": "How did Tesla's research and development expenses change from FY2021 through FY2024? Identify the trend direction.",
+    "category": "time_sequenced",
+    "difficulty": "hard",
+    "expected_answer_contains": ["research", "development"],
+    "required_periods": ["2021-12-31", "2022-12-31", "2023-12-31", "2024-12-31"],
+    "required_concepts": ["us-gaap:ResearchAndDevelopmentExpense"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:ResearchAndDevelopmentExpense"]
+  },
+  {
+    "question_id": "BQ-005",
+    "question": "Compare Tesla's operating income across Q1 2023, Q2 2023, and Q3 2023. Which quarter had the highest operating margin?",
+    "category": "multi_period",
+    "difficulty": "hard",
+    "expected_answer_contains": ["operating income", "quarter"],
+    "required_periods": ["2023-03-31", "2023-06-30", "2023-09-30"],
+    "required_concepts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "rank"
+    }
+  },
+  {
+    "question_id": "BQ-006",
+    "question": "What was Tesla's cash and cash equivalents position as of December 31, 2023, and how did it compare to December 31, 2022?",
+    "category": "balance_sheet",
+    "difficulty": "medium",
+    "expected_answer_contains": ["cash"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
+  },
+  {
+    "question_id": "BQ-007",
+    "question": "Calculate Tesla's free cash flow for FY2023 by subtracting capital expenditures from operating cash flow. Show each step.",
+    "category": "calculation",
+    "difficulty": "hard",
+    "expected_answer_contains": ["free cash flow", "capital expenditure"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": [
+      "custom:FreeCashFlow",
+      "custom:CapitalExpenditure",
+      "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "expected_status": "ok",
+    "expected_facts": [
+      "custom:FreeCashFlow",
+      "custom:CapitalExpenditure",
+      "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 4358000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-008",
+    "question": "What was Tesla's total revenue in FY2023?",
+    "category": "cross_year",
+    "difficulty": "easy",
+    "expected_answer_contains": ["96,773,000,000.00", "result"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 96773000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-009",
+    "question": "What was Tesla's free cash flow in FY2023?",
+    "category": "calculation",
+    "difficulty": "easy",
+    "expected_answer_contains": ["free cash flow", "4,358,000,000.00"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["custom:FreeCashFlow"],
+    "expected_status": "ok",
+    "expected_facts": ["custom:FreeCashFlow"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 4358000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-010",
+    "question": "比较特斯拉FY2022和FY2023的总营收，同比增长率是多少？",
+    "category": "cross_year",
+    "difficulty": "medium",
+    "expected_answer_contains": ["总营收", "同比", "18.80"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "pct_change",
+      "expected_value": 18.80,
+      "tolerance": 0.02
+    }
+  },
+  {
+    "question_id": "BQ-011",
+    "question": "特斯拉FY2023的毛利率是多少？请展示毛利润除以总营收的计算过程。",
+    "category": "calculation",
+    "difficulty": "medium",
+    "expected_answer_contains": ["毛利率", "毛利润", "总营收"],
+    "required_periods": ["2023-12-31"],
+    "required_concepts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:GrossProfit", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "ratio",
+      "numerator": "us-gaap:GrossProfit",
+      "denominator": "us-gaap:Revenues",
+      "expected_value": 18.25,
+      "tolerance": 0.05
+    }
+  },
+  {
+    "question_id": "BQ-012",
+    "question": "2023年10-K中，特斯拉提到了哪些供应链风险？FY2022到FY2023汽车销售成本如何变化？",
+    "category": "text_plus_table",
+    "difficulty": "hard",
+    "expected_answer_contains": ["供应链", "成本"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CostOfGoodsAndServicesSold"],
+    "expected_narrative_terms": ["供应链"]
+  },
+  {
+    "question_id": "BQ-013",
+    "question": "从FY2021到FY2024，特斯拉的研发费用如何变化？请概括趋势。",
+    "category": "time_sequenced",
+    "difficulty": "hard",
+    "expected_answer_contains": ["研发", "趋势"],
+    "required_periods": ["2021-12-31", "2022-12-31", "2023-12-31", "2024-12-31"],
+    "required_concepts": ["us-gaap:ResearchAndDevelopmentExpense"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:ResearchAndDevelopmentExpense"]
+  },
+  {
+    "question_id": "BQ-014",
+    "question": "比较特斯拉2023年Q1、Q2和Q3的营业利润，哪个季度的营业利润率最高？",
+    "category": "multi_period",
+    "difficulty": "hard",
+    "expected_answer_contains": ["营业利润", "季度"],
+    "required_periods": ["2023-03-31", "2023-06-30", "2023-09-30"],
+    "required_concepts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:OperatingIncomeLoss", "us-gaap:Revenues"],
+    "expected_calc": {
+      "operation": "rank"
+    }
+  },
+  {
+    "question_id": "BQ-015",
+    "question": "截至2023年12月31日，特斯拉的现金及现金等价物是多少？相比2022年末如何变化？",
+    "category": "balance_sheet",
+    "difficulty": "medium",
+    "expected_answer_contains": ["现金及现金等价物"],
+    "required_periods": ["2022-12-31", "2023-12-31"],
+    "required_concepts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"]
+  },
+  {
+    "question_id": "BQ-016",
+    "question": "What was Tesla's accounts payable current at the end of FY2024?",
+    "category": "balance_sheet",
+    "difficulty": "medium",
+    "expected_answer_contains": ["accounts payable", "12,474,000,000"],
+    "required_periods": ["2024-12-31"],
+    "required_concepts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 12474000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-017",
+    "question": "What was Tesla's public float according to the 2024 annual filing?",
+    "category": "balance_sheet",
+    "difficulty": "hard",
+    "expected_answer_contains": ["public float", "550,170,000,000"],
+    "required_periods": ["2024-06-28"],
+    "required_concepts": ["dei:EntityPublicFloat"],
+    "expected_status": "ok",
+    "expected_facts": ["dei:EntityPublicFloat"],
+    "expected_calc": {
+      "operation": "lookup",
+      "expected_value": 550170000000,
+      "tolerance": 0.01
+    }
+  },
+  {
+    "question_id": "BQ-018",
+    "question": "Compare Tesla's accounts receivable current between FY2023 and FY2024.",
+    "category": "cross_year",
+    "difficulty": "medium",
+    "expected_answer_contains": ["accounts receivable", "3,508,000,000", "4,418,000,000"],
+    "required_periods": ["2023-12-31", "2024-12-31"],
+    "required_concepts": ["us-gaap:AccountsReceivableNetCurrent"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:AccountsReceivableNetCurrent"]
+  },
+  {
+    "question_id": "BQ-019",
+    "question": "What geopolitical risks did Tesla mention in 2024, and what was accounts payable current at year-end?",
+    "category": "text_plus_table",
+    "difficulty": "hard",
+    "expected_answer_contains": ["geopolitical", "accounts payable"],
+    "required_periods": ["2024-12-31"],
+    "required_concepts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_status": "ok",
+    "expected_facts": ["us-gaap:AccountsPayableCurrent"],
+    "expected_narrative_terms": ["geopolitical"]
+  }
+]

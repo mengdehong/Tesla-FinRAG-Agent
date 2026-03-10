@@ -30,7 +30,7 @@
 
 ## Commit & Pull Request Guidelines
 - Use Conventional Commits as seen in history (`docs: ...`, `chore: ...`).
-- Recommended format: `<type>(scope): <summary>`.
+- Recommended format: `<type>(scope): <summary>`. summary use Chinese
 - PRs should include: purpose, key changes, validation commands run, and sample output/screenshots for UI changes.
 - Link related OpenSpec change/task IDs when applicable.
 

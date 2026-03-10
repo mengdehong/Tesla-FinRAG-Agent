@@ -1,0 +1,34 @@
+{
+  "run_id": "ba83cfd6354e",
+  "timestamp": "2026-03-09T15:21:53.793634Z",
+  "run_file": "data/evaluation/runs/run_20260309_152153_ba83cfd6354e.json",
+  "summary": {
+    "total": 19,
+    "pass_count": 19,
+    "fail_count": 0,
+    "error_count": 0,
+    "avg_latency_ms": 6097.54,
+    "pass_rate": 1.0
+  },
+  "question_pass_fail": {
+    "BQ-001": true,
+    "BQ-002": true,
+    "BQ-003": true,
+    "BQ-004": true,
+    "BQ-005": true,
+    "BQ-006": true,
+    "BQ-007": true,
+    "BQ-008": true,
+    "BQ-009": true,
+    "BQ-010": true,
+    "BQ-011": true,
+    "BQ-012": true,
+    "BQ-013": true,
+    "BQ-014": true,
+    "BQ-015": true,
+    "BQ-016": true,
+    "BQ-017": true,
+    "BQ-018": true,
+    "BQ-019": true
+  }
+}

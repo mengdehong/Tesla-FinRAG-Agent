@@ -1,0 +1,1932 @@
+{
+  "run_id": "56e373d19037",
+  "timestamp": "2026-03-09T06:30:39.875770Z",
+  "total_questions": 9,
+  "results": [
+    {
+      "question_id": "BQ-001",
+      "answer_status": "ok",
+      "answer_text": "The revenue increased by $15,311,000,000.00 from the period ending 2022-12-31 to the period ending 2023-12-31, which represents an 18.80% increase.",
+      "latency_ms": 10452.89,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": false,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:Revenues"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": true,
+        "calc_detail": "Expected ≈18.8, best match = 18.8, rel_error = 0.000000, tolerance = 0.02 → PASS",
+        "operation_ok": true,
+        "operation_detail": "Expected operation=pct_change, actual=pct_change → PASS",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 7,
+        "table_chunks_count": 31,
+        "fact_records_count": 6,
+        "retrieval_scores": {
+          "cbbd7f34-69fc-451b-81f8-5751163097ad": 0.031746031746031744,
+          "cae43879-937a-43a1-b252-67a209292a49": 0.03128054740957967,
+          "386aee46-e91c-4983-8a4c-91ee7b2d1622": 0.031099324975891997,
+          "dc532e30-8745-409b-a271-2cb3bf7ad724": 0.030117753623188408,
+          "b1a91f0b-eede-4ccd-9c45-e5c932262e00": 0.031746031746031744,
+          "537d2dfe-3fc4-44ee-b3f0-3f362fcd1294": 0.030834914611005692,
+          "a285183c-2e4a-437c-b8bd-edde4d9788c6": 0.028814262023217248,
+          "1589eb24-ee3a-4e48-b453-0445ac1053dd": 0.02857142857142857,
+          "0e7093c6-b951-4005-ad77-3faa91e43af1": 0.0,
+          "2ae73a39-3a01-4a3d-8470-95a252f5f341": 0.0,
+          "2bd6d242-b3bb-4ce5-abb8-44484762cef0": 0.0,
+          "539732fb-011f-44d8-af32-1bf8f3e83a9b": 0.0,
+          "78216681-74c3-47fd-bf63-06a2efc761a7": 0.0,
+          "8a21e1fa-7cd1-4a70-b6fc-9f653f6f24b3": 0.0,
+          "8ce51294-5cad-4d5b-8eb3-93ac2e5ae857": 0.0,
+          "8f4c10e6-8d54-486d-b537-3d769a246c3a": 0.0,
+          "b0c68798-90c7-43c7-a565-7e2c6e314285": 0.0,
+          "c0a18a6d-f560-4a6d-ac9e-347288df4cc2": 0.0,
+          "e9a28be2-9d48-429b-bf20-37bbe8191591": 0.0,
+          "ebe7f917-da05-4488-8df6-f1a40e2f9088": 0.0,
+          "0b0b83ef-9f8b-4eb3-8b32-6650147caf0d": 0.0,
+          "0daad850-3e81-4358-ae56-878ea80eebb0": 0.0,
+          "24d46809-ec59-4021-8d9d-afec8720cd0a": 0.0,
+          "25437aee-c8ea-4aca-9e8d-9fe7db2bee5c": 0.0,
+          "4d8e3ccf-cd12-41f5-ae4e-ee8be639786f": 0.0,
+          "5a14c43c-f0bb-48de-9a80-5c479a6513b9": 0.0,
+          "646f173d-a953-4c82-8753-c4baa243182e": 0.0,
+          "6f49037f-d3d3-4b66-893a-2504ea99e103": 0.0,
+          "7c67a7d7-5133-4582-ab04-092d9adf9a84": 0.0,
+          "7d13441b-ad47-47d0-b7ef-a5a50c23032c": 0.0,
+          "85fdaec4-5bc1-45cf-aaaa-87c63f55df17": 0.0,
+          "a5e7536e-3e25-41db-9106-2e2b875fb2b6": 0.0,
+          "b4a817f4-4388-4a02-8001-a471831e1290": 0.0,
+          "bf8623c4-2040-404f-96a7-516fd143989f": 0.0,
+          "dc31d7b6-8d36-4368-aae9-bdb815cd3ac8": 0.0,
+          "e8065fb5-e639-4cca-bf9d-0ca32bd8fa66": 0.0,
+          "f00eeb76-a583-4a9d-b16a-d4751e35b8ea": 0.0,
+          "f1c7a039-d01c-47f1-a07b-0aa3d1911fcf": 0.0
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "pct_change",
+        "required_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "us-gaap:Revenues"
+        ],
+        "period_semantics": {
+          "2022-12-31": "annual_cumulative",
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "us-gaap:Revenues"
+        ],
+        "fact_concepts_by_period": {
+          "2022-12-31": [
+            "us-gaap:Revenues"
+          ],
+          "2023-12-31": [
+            "us-gaap:Revenues"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "retrieval_mode": "per_period",
+        "sub_query_count": 2,
+        "per_period": {
+          "2022-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 3,
+            "fused_hits": 4,
+            "query_text": "revenue for FY2022",
+            "doc_id_filter": [
+              "726d7206-140b-55c5-a32b-78a77d7984d8"
+            ],
+            "scope_miss": false
+          },
+          "2023-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 3,
+            "fused_hits": 4,
+            "query_text": "revenue for FY2023",
+            "doc_id_filter": [
+              "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+            ],
+            "scope_miss": false
+          }
+        },
+        "fact_hits": 6,
+        "fused_hits": 8,
+        "linked_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 30,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2022-12-31": {
+            "has_facts": true,
+            "fact_count": 3,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          },
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 3,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "vector_hits": 0,
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-002",
+      "answer_status": "ok",
+      "answer_text": "The gross margin for the period ending 2023-12-31 is 18.25%.",
+      "latency_ms": 5518.51,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": false,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:GrossProfit",
+          "us-gaap:Revenues"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": true,
+        "calc_detail": "Expected ≈18.25, best match = 18.25, rel_error = 0.000000, tolerance = 0.05 → PASS",
+        "operation_ok": true,
+        "operation_detail": "Expected operation=ratio, actual=ratio → PASS",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 7,
+        "table_chunks_count": 13,
+        "fact_records_count": 6,
+        "retrieval_scores": {
+          "52efa68c-46fa-43f5-ba49-65c6159a1741": 0.032266458495966696,
+          "e5cb284a-f9ae-47b7-8237-15cec19bdf8c": 0.031099324975891997,
+          "8c9a3069-239c-4e0c-94bf-a4e4e34d05d3": 0.031009615384615385,
+          "6c38968f-7562-4cb5-a7a5-8801cc41a404": 0.030303030303030304,
+          "e9a28be2-9d48-429b-bf20-37bbe8191591": 0.030017921146953404,
+          "a285183c-2e4a-437c-b8bd-edde4d9788c6": 0.02919863597612958,
+          "d4f2148e-5487-4086-af68-6bd6f755fa2b": 0.016129032258064516,
+          "b1a91f0b-eede-4ccd-9c45-e5c932262e00": 0.015873015873015872,
+          "0e7093c6-b951-4005-ad77-3faa91e43af1": 0.0,
+          "2ae73a39-3a01-4a3d-8470-95a252f5f341": 0.0,
+          "2bd6d242-b3bb-4ce5-abb8-44484762cef0": 0.0,
+          "537d2dfe-3fc4-44ee-b3f0-3f362fcd1294": 0.0,
+          "539732fb-011f-44d8-af32-1bf8f3e83a9b": 0.0,
+          "78216681-74c3-47fd-bf63-06a2efc761a7": 0.0,
+          "8a21e1fa-7cd1-4a70-b6fc-9f653f6f24b3": 0.0,
+          "8ce51294-5cad-4d5b-8eb3-93ac2e5ae857": 0.0,
+          "8f4c10e6-8d54-486d-b537-3d769a246c3a": 0.0,
+          "b0c68798-90c7-43c7-a565-7e2c6e314285": 0.0,
+          "c0a18a6d-f560-4a6d-ac9e-347288df4cc2": 0.0,
+          "ebe7f917-da05-4488-8df6-f1a40e2f9088": 0.0
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "ratio",
+        "required_periods": [
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "us-gaap:Revenues",
+          "us-gaap:GrossProfit"
+        ],
+        "period_semantics": {
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "us-gaap:GrossProfit",
+          "us-gaap:Revenues"
+        ],
+        "fact_concepts_by_period": {
+          "2023-12-31": [
+            "us-gaap:Revenues",
+            "us-gaap:GrossProfit"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "lexical_hits": 15,
+        "vector_hits": 15,
+        "fact_hits": 6,
+        "fused_hits": 8,
+        "query_text": "What was Tesla's gross profit margin for FY2023? Show how gross profit divided by total revenue produces the margin percentage. tesla's gross profit margin show gross profit divided total revenue produces margin percentage us-gaap:Revenues us-gaap:GrossProfit",
+        "doc_id_filter": [
+          "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+        ],
+        "retrieval_mode": "single_pass",
+        "linked_periods": [
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 12,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 6,
+            "concept_count": 2,
+            "matched_concepts": [
+              "us-gaap:GrossProfit",
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-003",
+      "answer_status": "ok",
+      "answer_text": "Based on Tesla's SEC filings:\n\n[Preamble] rward-looking statements include, but are not limited to, statements concerning supply chain constraints, our strategy,\ncompetition, future operations and production capacity, future financial position, future revenues, projected costs, profitability, expected cost reductions,\ncapital adequacy, expe\n[Item 7. MANAGEMENT’S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS] ur vehicles and battery technologies, vertically integrating and\nlocalizing our supply chain, improving and further deploying our FSD capabilities, increasing the affordability and efficiency of our vehicles, bringing new\nproducts to market and expanding our global infrastructure, including our serv\n[Item 8. FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA] riteria have been met. The difference between the payments received and the revenue\nrecognized is recorded as deferred revenue or deferred asset on the consolidated balance sheet.\nFor solar energy systems where customers purchase electricity from us under PPAs prior to January 1, 2019, we have deter\n\nNote: The numeric component of this question could not be fully grounded from the available financial data.\n  - Missing grounded facts for period(s): 2022-12-31, 2023-12-31\n  - Missing required concept(s) for 2022-12-31: us-gaap:CostOfGoodsAndServicesSold\n  - Missing required concept(s) for 2023-12-31: us-gaap:CostOfGoodsAndServicesSold",
+      "latency_ms": 96168.46,
+      "passed": false,
+      "notes": "",
+      "legacy_passed": true,
+      "structured_passed": false,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:CostOfGoodsAndServicesSold"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": false,
+        "periods_missing_facts": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "facts_missing_by_period": {
+          "2022-12-31": [
+            "us-gaap:CostOfGoodsAndServicesSold"
+          ],
+          "2023-12-31": [
+            "us-gaap:CostOfGoodsAndServicesSold"
+          ]
+        },
+        "calc_correct": null,
+        "calc_detail": "",
+        "operation_ok": null,
+        "operation_detail": "",
+        "narrative_terms_found": [
+          "supply chain"
+        ],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 9,
+        "table_chunks_count": 0,
+        "fact_records_count": 823,
+        "retrieval_scores": {
+          "295ad8f2-3fa1-487c-843d-14e6f2f67f96": 0.03252247488101534,
+          "21791c72-2c8a-418b-9dfc-d19afbbaa7e5": 0.03252247488101534,
+          "ccc9309e-1c24-492b-8b1e-b5531ff8de99": 0.03125,
+          "52efa68c-46fa-43f5-ba49-65c6159a1741": 0.032018442622950824,
+          "dd9b123a-6350-4fee-93b3-eaf9bd4598e5": 0.032018442622950824,
+          "8fcea4ee-2ad9-46a2-a5ae-5741d8b0c022": 0.0315136476426799,
+          "246b50b1-a89f-43c1-b429-83737a96ba55": 0.03278688524590164,
+          "3a44a501-5ba3-44a0-a1ab-ed3fea85da9e": 0.029571646010002173,
+          "452da7e0-b0ac-476f-bbe3-076478979c55": 0.016129032258064516
+        },
+        "query_type": "hybrid_reasoning",
+        "calculation_intent": "lookup",
+        "required_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "us-gaap:CostOfGoodsAndServicesSold"
+        ],
+        "period_semantics": {
+          "2022-12-31": "annual_cumulative",
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [
+          "Missing grounded facts for period(s): 2022-12-31, 2023-12-31",
+          "Missing required concept(s) for 2022-12-31: us-gaap:CostOfGoodsAndServicesSold",
+          "Missing required concept(s) for 2023-12-31: us-gaap:CostOfGoodsAndServicesSold"
+        ],
+        "numeric_limitation_reasons": [
+          "Missing grounded facts for period(s): 2022-12-31, 2023-12-31",
+          "Missing required concept(s) for 2022-12-31: us-gaap:CostOfGoodsAndServicesSold",
+          "Missing required concept(s) for 2023-12-31: us-gaap:CostOfGoodsAndServicesSold"
+        ],
+        "missing_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "missing_concepts_by_period": {
+          "2022-12-31": [
+            "us-gaap:CostOfGoodsAndServicesSold"
+          ],
+          "2023-12-31": [
+            "us-gaap:CostOfGoodsAndServicesSold"
+          ]
+        },
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "custom:CapitalExpenditure",
+          "custom:FreeCashFlow",
+          "us-gaap:AccountsAndNotesReceivableNet",
+          "us-gaap:AccountsPayableCurrent",
+          "us-gaap:AccountsReceivableNetCurrent",
+          "us-gaap:AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment",
+          "us-gaap:AccumulatedOtherComprehensiveIncomeLossNetOfTax",
+          "us-gaap:AdditionalPaidInCapitalCommonStock",
+          "us-gaap:AdjustmentsToAdditionalPaidInCapitalSharebasedCompensationRequisiteServicePeriodRecognitionValue",
+          "us-gaap:AllocatedShareBasedCompensationExpense",
+          "us-gaap:Assets",
+          "us-gaap:AssetsCurrent",
+          "us-gaap:AssetsFairValueDisclosure",
+          "us-gaap:AvailableForSaleDebtSecuritiesAccumulatedGrossUnrealizedGainBeforeTax",
+          "us-gaap:AvailableForSaleDebtSecuritiesAccumulatedGrossUnrealizedLossBeforeTax",
+          "us-gaap:AvailableForSaleDebtSecuritiesAmortizedCostBasis",
+          "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesNextRollingTwelveMonthsFairValue",
+          "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesRollingYearSixThroughTenFairValue",
+          "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesRollingYearTwoThroughFiveFairValue",
+          "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesSingleMaturityDate",
+          "us-gaap:AvailableForSaleSecuritiesDebtSecurities",
+          "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+          "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations",
+          "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+          "us-gaap:CommonStockParOrStatedValuePerShare",
+          "us-gaap:CommonStockSharesAuthorized",
+          "us-gaap:CommonStockSharesIssued",
+          "us-gaap:CommonStockSharesOutstanding",
+          "us-gaap:CommonStockValue",
+          "us-gaap:ComprehensiveIncomeNetOfTax",
+          "us-gaap:ComprehensiveIncomeNetOfTaxAttributableToNoncontrollingInterest",
+          "us-gaap:ComprehensiveIncomeNetOfTaxIncludingPortionAttributableToNoncontrollingInterest",
+          "us-gaap:ContractWithCustomerLiability",
+          "us-gaap:ContractWithCustomerLiabilityCurrent",
+          "us-gaap:ContractWithCustomerLiabilityNoncurrent",
+          "us-gaap:ContractWithCustomerLiabilityRevenueRecognized",
+          "us-gaap:CostOfRevenue",
+          "us-gaap:CryptoAssetFairValue",
+          "us-gaap:CurrentFederalTaxExpenseBenefit",
+          "us-gaap:CurrentForeignTaxExpenseBenefit",
+          "us-gaap:CurrentIncomeTaxExpenseBenefit",
+          "us-gaap:CurrentStateAndLocalTaxExpenseBenefit",
+          "us-gaap:DebtCurrent",
+          "us-gaap:DebtInstrumentCarryingAmount",
+          "us-gaap:DebtInstrumentUnusedBorrowingCapacityAmount",
+          "us-gaap:DeferredFederalIncomeTaxExpenseBenefit",
+          "us-gaap:DeferredForeignIncomeTaxExpenseBenefit",
+          "us-gaap:DeferredIncomeTaxAssetsNet",
+          "us-gaap:DeferredIncomeTaxExpenseBenefit",
+          "us-gaap:DeferredIncomeTaxLiabilities",
+          "us-gaap:DeferredStateAndLocalIncomeTaxExpenseBenefit",
+          "us-gaap:DeferredTaxAssetsDeferredIncome",
+          "us-gaap:DeferredTaxAssetsGross",
+          "us-gaap:DeferredTaxAssetsInventory",
+          "us-gaap:DeferredTaxAssetsNet",
+          "us-gaap:DeferredTaxAssetsOperatingLossCarryforwards",
+          "us-gaap:DeferredTaxAssetsOther",
+          "us-gaap:DeferredTaxAssetsTaxCreditCarryforwardsOther",
+          "us-gaap:DeferredTaxAssetsTaxCreditCarryforwardsResearch",
+          "us-gaap:DeferredTaxAssetsTaxDeferredExpenseCompensationAndBenefitsShareBasedCompensationCost",
+          "us-gaap:DeferredTaxAssetsTaxDeferredExpenseReservesAndAccrualsOther",
+          "us-gaap:DeferredTaxAssetsValuationAllowance",
+          "us-gaap:DeferredTaxLiabilitiesInvestments",
+          "us-gaap:DeferredTaxLiabilitiesOther",
+          "us-gaap:DeferredTaxLiabilitiesPropertyPlantAndEquipment",
+          "us-gaap:DeferredTaxLiabilitiesUndistributedForeignEarnings",
+          "us-gaap:DeferredTaxLiabilityNotRecognizedAmountOfUnrecognizedDeferredTaxLiabilityUndistributedEarningsOfForeignSubsidiaries",
+          "us-gaap:DefinedContributionPlanEmployerDiscretionaryContributionAmount",
+          "us-gaap:DefinedContributionPlanEmployerMatchingContributionPercentOfMatch",
+          "us-gaap:DefinedContributionPlanMaximumAnnualContributionsPerEmployeeAmount",
+          "us-gaap:Depreciation",
+          "us-gaap:DilutiveSecuritiesEffectOnBasicEarningsPerShareOther",
+          "us-gaap:EarningsPerShareBasic",
+          "us-gaap:EarningsPerShareDiluted",
+          "us-gaap:EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations",
+          "us-gaap:EffectiveIncomeTaxRateReconciliationCrossBorderTaxEffectAmount",
+          "us-gaap:EffectiveIncomeTaxRateReconciliationGiltiAmount",
+          "us-gaap:EffectiveIncomeTaxRateReconciliationShareBasedCompensationExcessTaxBenefitAmount",
+          "us-gaap:EmployeeRelatedLiabilitiesCurrent",
+          "us-gaap:EmployeeServiceShareBasedCompensationAllocationOfRecognizedPeriodCostsCapitalizedAmount",
+          "us-gaap:EmployeeServiceShareBasedCompensationNonvestedAwardsTotalCompensationCostNotYetRecognized",
+          "us-gaap:EmployeeServiceShareBasedCompensationTaxBenefitFromCompensationExpense",
+          "us-gaap:FinanceLeaseInterestExpense",
+          "us-gaap:FinanceLeaseInterestPaymentOnLiability",
+          "us-gaap:FinanceLeaseLiability",
+          "us-gaap:FinanceLeaseLiabilityCurrent",
+          "us-gaap:FinanceLeaseLiabilityNoncurrent",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDue",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDueAfterYearFive",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDueNextTwelveMonths",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDueYearFive",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDueYearFour",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDueYearThree",
+          "us-gaap:FinanceLeaseLiabilityPaymentsDueYearTwo",
+          "us-gaap:FinanceLeaseLiabilityUndiscountedExcessAmount",
+          "us-gaap:FinanceLeasePrincipalPayments",
+          "us-gaap:FinanceLeaseRightOfUseAsset",
+          "us-gaap:FinanceLeaseRightOfUseAssetAmortization",
+          "us-gaap:FinanceLeaseWeightedAverageDiscountRatePercent",
+          "us-gaap:FinancingReceivableAllowanceForCreditLosses",
+          "us-gaap:ForeignCurrencyTransactionGainLossUnrealized",
+          "us-gaap:Goodwill",
+          "us-gaap:GoodwillImpairedAccumulatedImpairmentLoss",
+          "us-gaap:GoodwillImpairmentLoss",
+          "us-gaap:GoodwillPeriodIncreaseDecrease",
+          "us-gaap:GrossProfit",
+          "us-gaap:GuaranteeObligationsMaximumExposure",
+          "us-gaap:ImpairmentOfIntangibleAssetsExcludingGoodwill",
+          "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic",
+          "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+          "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign",
+          "us-gaap:IncomeTaxExpenseBenefit",
+          "us-gaap:IncomeTaxReconciliationChangeInDeferredTaxAssetsValuationAllowance",
+          "us-gaap:IncomeTaxReconciliationForeignIncomeTaxRateDifferential",
+          "us-gaap:IncomeTaxReconciliationIncomeTaxExpenseBenefitAtFederalStatutoryIncomeTaxRate",
+          "us-gaap:IncomeTaxReconciliationNondeductibleExpenseOther",
+          "us-gaap:IncomeTaxReconciliationNondeductibleExpenseShareBasedCompensationCost",
+          "us-gaap:IncomeTaxReconciliationStateAndLocalIncomeTaxes",
+          "us-gaap:IncomeTaxReconciliationTaxContingencies",
+          "us-gaap:IncomeTaxReconciliationTaxCredits",
+          "us-gaap:IncomeTaxesPaid",
+          "us-gaap:IncomeTaxesPaidNet",
+          "us-gaap:IncreaseDecreaseInAccountsPayableAndAccruedLiabilities",
+          "us-gaap:IncreaseDecreaseInAccountsReceivable",
+          "us-gaap:IncreaseDecreaseInContractWithCustomerLiability",
+          "us-gaap:IncreaseDecreaseInInventories",
+          "us-gaap:IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",
+          "us-gaap:IncrementalCommonSharesAttributableToCallOptionsAndWarrants",
+          "us-gaap:IncrementalCommonSharesAttributableToConversionOfDebtSecurities",
+          "us-gaap:IncrementalCommonSharesAttributableToShareBasedPaymentArrangements",
+          "us-gaap:IntangibleAssetsNetExcludingGoodwill",
+          "us-gaap:InterestExpense",
+          "us-gaap:InterestExpenseNonoperating",
+          "us-gaap:InterestIncomeShortTermInvestmentOther",
+          "us-gaap:InterestPaidNet",
+          "us-gaap:InventoryFinishedGoodsNetOfReserves",
+          "us-gaap:InventoryNet",
+          "us-gaap:InventoryPartsAndComponentsNetOfReserves",
+          "us-gaap:InventoryRawMaterialsNetOfReserves",
+          "us-gaap:InventoryWorkInProcessNetOfReserves",
+          "us-gaap:InventoryWriteDown",
+          "us-gaap:InvestmentIncomeInterest",
+          "us-gaap:LeaseCost",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDue",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueAfterYearFive",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueNextTwelveMonths",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearFive",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearFour",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearThree",
+          "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearTwo",
+          "us-gaap:LesseeOperatingLeaseLiabilityUndiscountedExcessAmount",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceived",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceivedFiveYears",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceivedFourYears",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceivedNextTwelveMonths",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceivedThereafter",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceivedThreeYears",
+          "us-gaap:LessorOperatingLeasePaymentsToBeReceivedTwoYears",
+          "us-gaap:LettersOfCreditOutstandingAmount",
+          "us-gaap:Liabilities",
+          "us-gaap:LiabilitiesAndStockholdersEquity",
+          "us-gaap:LiabilitiesCurrent",
+          "us-gaap:LongTermDebt",
+          "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalAfterYearFive",
+          "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths",
+          "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFive",
+          "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFour",
+          "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearThree",
+          "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearTwo",
+          "us-gaap:MinorityInterest",
+          "us-gaap:MinorityInterestDecreaseFromDistributionsToNoncontrollingInterestHolders",
+          "us-gaap:MinorityInterestDecreaseFromRedemptions",
+          "us-gaap:NetCashProvidedByUsedInFinancingActivities",
+          "us-gaap:NetCashProvidedByUsedInInvestingActivities",
+          "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+          "us-gaap:NetIncomeLoss",
+          "us-gaap:NetIncomeLossAttributableToNoncontrollingInterest",
+          "us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic",
+          "us-gaap:NetIncomeLossAvailableToCommonStockholdersDiluted",
+          "us-gaap:NoncashOrPartNoncashAcquisitionValueOfAssetsAcquired1",
+          "us-gaap:NoncurrentAssets",
+          "us-gaap:NotesAndLoansReceivableNetCurrent",
+          "us-gaap:NumberOfOperatingSegments",
+          "us-gaap:NumberOfReportableSegments",
+          "us-gaap:OperatingExpenses",
+          "us-gaap:OperatingIncomeLoss",
+          "us-gaap:OperatingLeaseCost",
+          "us-gaap:OperatingLeaseLiability",
+          "us-gaap:OperatingLeaseLiabilityCurrent",
+          "us-gaap:OperatingLeaseLiabilityNoncurrent",
+          "us-gaap:OperatingLeasePayments",
+          "us-gaap:OperatingLeaseRightOfUseAsset",
+          "us-gaap:OperatingLeaseWeightedAverageDiscountRatePercent",
+          "us-gaap:OtherAssetsNoncurrent",
+          "us-gaap:OtherComprehensiveIncomeLossForeignCurrencyTransactionAndTranslationAdjustmentNetOfTax",
+          "us-gaap:OtherComprehensiveIncomeLossNetOfTax",
+          "us-gaap:OtherComprehensiveIncomeLossNetOfTaxPortionAttributableToParent",
+          "us-gaap:OtherLiabilitiesCurrent",
+          "us-gaap:OtherLiabilitiesNoncurrent",
+          "us-gaap:OtherNonoperatingIncomeExpense",
+          "us-gaap:PaymentsOfDebtIssuanceCosts",
+          "us-gaap:PaymentsToAcquireBusinessesNetOfCashAcquired",
+          "us-gaap:PaymentsToAcquireInvestments",
+          "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+          "us-gaap:PaymentsToMinorityShareholders",
+          "us-gaap:PreferredStockParOrStatedValuePerShare",
+          "us-gaap:PreferredStockSharesAuthorized",
+          "us-gaap:PreferredStockSharesIssued",
+          "us-gaap:PreferredStockSharesOutstanding",
+          "us-gaap:PreferredStockValue",
+          "us-gaap:PrepaidExpenseAndOtherAssetsCurrent",
+          "us-gaap:ProceedsFromIssuanceOfDebt",
+          "us-gaap:ProceedsFromIssuanceOfSharesUnderIncentiveAndShareBasedCompensationPlansIncludingStockOptions",
+          "us-gaap:ProceedsFromMinorityShareholders",
+          "us-gaap:ProceedsFromRepaymentsOfSecuredDebt",
+          "us-gaap:ProceedsFromSaleMaturityAndCollectionsOfInvestments",
+          "us-gaap:ProceedsFromSaleOfShortTermInvestments",
+          "us-gaap:ProductWarrantyAccrualPreexistingIncreaseDecrease",
+          "us-gaap:ProfitLoss",
+          "us-gaap:PropertyPlantAndEquipmentGross",
+          "us-gaap:PropertyPlantAndEquipmentNet",
+          "us-gaap:PropertySubjectToOrAvailableForOperatingLeaseAccumulatedDepreciation",
+          "us-gaap:PropertySubjectToOrAvailableForOperatingLeaseGross",
+          "us-gaap:RedeemableNoncontrollingInterestEquityCarryingAmount",
+          "us-gaap:RelatedPartyTransactionAmountsOfTransaction",
+          "us-gaap:RepaymentsOfConvertibleDebt",
+          "us-gaap:RepaymentsOfDebt",
+          "us-gaap:ResearchAndDevelopmentExpense",
+          "us-gaap:RestrictedCashCurrent",
+          "us-gaap:RestrictedCashNoncurrent",
+          "us-gaap:RetainedEarningsAccumulatedDeficit",
+          "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
+          "us-gaap:RevenueRemainingPerformanceObligation",
+          "us-gaap:Revenues",
+          "us-gaap:RightOfUseAssetObtainedInExchangeForFinanceLeaseLiability",
+          "us-gaap:RightOfUseAssetObtainedInExchangeForOperatingLeaseLiability",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceived",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedFiveYears",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedFourYears",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedNextTwelveMonths",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedThereafter",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedThreeYears",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedTwoYears",
+          "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivableUndiscountedExcessAmount",
+          "us-gaap:SalesTypeLeaseLeaseReceivable",
+          "us-gaap:SalesTypeLeaseNetInvestmentInLease",
+          "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAfterAllowanceForCreditLoss",
+          "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAfterAllowanceForCreditLossCurrent",
+          "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAfterAllowanceForCreditLossNoncurrent",
+          "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAllowanceForCreditLoss",
+          "us-gaap:SellingGeneralAndAdministrativeExpense",
+          "us-gaap:ShareBasedCompensation",
+          "us-gaap:ShareBasedCompensationArrangementByShareBasedPaymentAwardDiscountFromMarketPriceOfferingDate",
+          "us-gaap:ShareBasedCompensationArrangementByShareBasedPaymentAwardOptionsExercisesInPeriodTotalIntrinsicValue",
+          "us-gaap:ShortTermInvestments",
+          "us-gaap:StandardProductWarrantyAccrual",
+          "us-gaap:StandardProductWarrantyAccrualPayments",
+          "us-gaap:StandardProductWarrantyAccrualWarrantiesIssued",
+          "us-gaap:StockIssuedDuringPeriodSharesEmployeeStockPurchasePlans",
+          "us-gaap:StockholdersEquity",
+          "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+          "us-gaap:TaxesPayableCurrent",
+          "us-gaap:TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests",
+          "us-gaap:TemporaryEquityNetIncome",
+          "us-gaap:UnrealizedGainLossOnInvestments",
+          "us-gaap:UnrecognizedTaxBenefits",
+          "us-gaap:UnrecognizedTaxBenefitsDecreasesResultingFromPriorPeriodTaxPositions",
+          "us-gaap:UnrecognizedTaxBenefitsDecreasesResultingFromSettlementsWithTaxingAuthorities",
+          "us-gaap:UnrecognizedTaxBenefitsIncomeTaxPenaltiesAndInterestAccrued",
+          "us-gaap:UnrecognizedTaxBenefitsIncomeTaxPenaltiesAndInterestExpense",
+          "us-gaap:UnrecognizedTaxBenefitsIncreasesResultingFromCurrentPeriodTaxPositions",
+          "us-gaap:UnrecognizedTaxBenefitsIncreasesResultingFromPriorPeriodTaxPositions",
+          "us-gaap:UnrecognizedTaxBenefitsReductionsResultingFromLapseOfApplicableStatuteOfLimitations",
+          "us-gaap:UnrecognizedTaxBenefitsThatWouldImpactEffectiveTaxRate",
+          "us-gaap:ValuationAllowanceDeferredTaxAssetChangeInAmount",
+          "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding",
+          "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic"
+        ],
+        "fact_concepts_by_period": {
+          "2023-12-31": [
+            "us-gaap:AccountsAndNotesReceivableNet",
+            "us-gaap:AccountsPayableCurrent",
+            "us-gaap:AccountsReceivableNetCurrent",
+            "us-gaap:AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment",
+            "us-gaap:AccumulatedOtherComprehensiveIncomeLossNetOfTax",
+            "us-gaap:AdditionalPaidInCapitalCommonStock",
+            "us-gaap:AdjustmentsToAdditionalPaidInCapitalSharebasedCompensationRequisiteServicePeriodRecognitionValue",
+            "us-gaap:AllocatedShareBasedCompensationExpense",
+            "us-gaap:Assets",
+            "us-gaap:AssetsCurrent",
+            "us-gaap:AssetsFairValueDisclosure",
+            "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+            "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations",
+            "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+            "us-gaap:CommonStockParOrStatedValuePerShare",
+            "us-gaap:CommonStockSharesAuthorized",
+            "us-gaap:CommonStockSharesIssued",
+            "us-gaap:CommonStockSharesOutstanding",
+            "us-gaap:CommonStockValue",
+            "us-gaap:ComprehensiveIncomeNetOfTax",
+            "us-gaap:ComprehensiveIncomeNetOfTaxAttributableToNoncontrollingInterest",
+            "us-gaap:ComprehensiveIncomeNetOfTaxIncludingPortionAttributableToNoncontrollingInterest",
+            "us-gaap:ContractWithCustomerLiability",
+            "us-gaap:ContractWithCustomerLiabilityCurrent",
+            "us-gaap:ContractWithCustomerLiabilityNoncurrent",
+            "us-gaap:ContractWithCustomerLiabilityRevenueRecognized",
+            "us-gaap:CostOfRevenue",
+            "us-gaap:CurrentFederalTaxExpenseBenefit",
+            "us-gaap:CurrentForeignTaxExpenseBenefit",
+            "us-gaap:CurrentIncomeTaxExpenseBenefit",
+            "us-gaap:CurrentStateAndLocalTaxExpenseBenefit",
+            "us-gaap:DebtCurrent",
+            "us-gaap:DebtInstrumentCarryingAmount",
+            "us-gaap:DebtInstrumentUnusedBorrowingCapacityAmount",
+            "us-gaap:DeferredFederalIncomeTaxExpenseBenefit",
+            "us-gaap:DeferredForeignIncomeTaxExpenseBenefit",
+            "us-gaap:DeferredIncomeTaxExpenseBenefit",
+            "us-gaap:DeferredIncomeTaxLiabilities",
+            "us-gaap:DeferredTaxAssetsDeferredIncome",
+            "us-gaap:DeferredTaxAssetsGross",
+            "us-gaap:DeferredTaxAssetsInventory",
+            "us-gaap:DeferredTaxAssetsNet",
+            "us-gaap:DeferredTaxAssetsOperatingLossCarryforwards",
+            "us-gaap:DeferredTaxAssetsTaxCreditCarryforwardsOther",
+            "us-gaap:DeferredTaxAssetsTaxCreditCarryforwardsResearch",
+            "us-gaap:DeferredTaxAssetsTaxDeferredExpenseCompensationAndBenefitsShareBasedCompensationCost",
+            "us-gaap:DeferredTaxAssetsTaxDeferredExpenseReservesAndAccrualsOther",
+            "us-gaap:DeferredTaxAssetsValuationAllowance",
+            "us-gaap:DeferredTaxLiabilitiesInvestments",
+            "us-gaap:DeferredTaxLiabilitiesOther",
+            "us-gaap:DeferredTaxLiabilitiesPropertyPlantAndEquipment",
+            "us-gaap:DeferredTaxLiabilitiesUndistributedForeignEarnings",
+            "us-gaap:DefinedContributionPlanEmployerDiscretionaryContributionAmount",
+            "us-gaap:Depreciation",
+            "us-gaap:EarningsPerShareBasic",
+            "us-gaap:EarningsPerShareDiluted",
+            "us-gaap:EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations",
+            "us-gaap:EmployeeRelatedLiabilitiesCurrent",
+            "us-gaap:EmployeeServiceShareBasedCompensationAllocationOfRecognizedPeriodCostsCapitalizedAmount",
+            "us-gaap:EmployeeServiceShareBasedCompensationNonvestedAwardsTotalCompensationCostNotYetRecognized",
+            "us-gaap:EmployeeServiceShareBasedCompensationTaxBenefitFromCompensationExpense",
+            "us-gaap:FinanceLeaseInterestExpense",
+            "us-gaap:FinanceLeaseInterestPaymentOnLiability",
+            "us-gaap:FinanceLeaseLiability",
+            "us-gaap:FinanceLeaseLiabilityCurrent",
+            "us-gaap:FinanceLeaseLiabilityNoncurrent",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDue",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDueAfterYearFive",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDueNextTwelveMonths",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDueYearFive",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDueYearFour",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDueYearThree",
+            "us-gaap:FinanceLeaseLiabilityPaymentsDueYearTwo",
+            "us-gaap:FinanceLeaseLiabilityUndiscountedExcessAmount",
+            "us-gaap:FinanceLeasePrincipalPayments",
+            "us-gaap:FinanceLeaseRightOfUseAsset",
+            "us-gaap:FinanceLeaseRightOfUseAssetAmortization",
+            "us-gaap:FinanceLeaseWeightedAverageDiscountRatePercent",
+            "us-gaap:FinancingReceivableAllowanceForCreditLosses",
+            "us-gaap:Goodwill",
+            "us-gaap:GoodwillImpairedAccumulatedImpairmentLoss",
+            "us-gaap:GoodwillImpairmentLoss",
+            "us-gaap:GoodwillPeriodIncreaseDecrease",
+            "us-gaap:GrossProfit",
+            "us-gaap:ImpairmentOfIntangibleAssetsExcludingGoodwill",
+            "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic",
+            "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+            "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign",
+            "us-gaap:IncomeTaxExpenseBenefit",
+            "us-gaap:IncomeTaxesPaid",
+            "us-gaap:IncomeTaxReconciliationChangeInDeferredTaxAssetsValuationAllowance",
+            "us-gaap:IncomeTaxReconciliationForeignIncomeTaxRateDifferential",
+            "us-gaap:IncomeTaxReconciliationIncomeTaxExpenseBenefitAtFederalStatutoryIncomeTaxRate",
+            "us-gaap:IncomeTaxReconciliationNondeductibleExpenseOther",
+            "us-gaap:IncomeTaxReconciliationNondeductibleExpenseShareBasedCompensationCost",
+            "us-gaap:IncomeTaxReconciliationStateAndLocalIncomeTaxes",
+            "us-gaap:IncomeTaxReconciliationTaxCredits",
+            "us-gaap:IncreaseDecreaseInAccountsPayableAndAccruedLiabilities",
+            "us-gaap:IncreaseDecreaseInAccountsReceivable",
+            "us-gaap:IncreaseDecreaseInContractWithCustomerLiability",
+            "us-gaap:IncreaseDecreaseInInventories",
+            "us-gaap:IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",
+            "us-gaap:IncrementalCommonSharesAttributableToCallOptionsAndWarrants",
+            "us-gaap:IncrementalCommonSharesAttributableToConversionOfDebtSecurities",
+            "us-gaap:IncrementalCommonSharesAttributableToShareBasedPaymentArrangements",
+            "us-gaap:IntangibleAssetsNetExcludingGoodwill",
+            "us-gaap:InterestExpense",
+            "us-gaap:InterestPaidNet",
+            "us-gaap:InventoryFinishedGoodsNetOfReserves",
+            "us-gaap:InventoryNet",
+            "us-gaap:InventoryPartsAndComponentsNetOfReserves",
+            "us-gaap:InventoryRawMaterialsNetOfReserves",
+            "us-gaap:InventoryWorkInProcessNetOfReserves",
+            "us-gaap:InventoryWriteDown",
+            "us-gaap:InvestmentIncomeInterest",
+            "us-gaap:LeaseCost",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDue",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueAfterYearFive",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueNextTwelveMonths",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearFive",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearFour",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearThree",
+            "us-gaap:LesseeOperatingLeaseLiabilityPaymentsDueYearTwo",
+            "us-gaap:LesseeOperatingLeaseLiabilityUndiscountedExcessAmount",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceived",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceivedFiveYears",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceivedFourYears",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceivedNextTwelveMonths",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceivedThereafter",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceivedThreeYears",
+            "us-gaap:LessorOperatingLeasePaymentsToBeReceivedTwoYears",
+            "us-gaap:LettersOfCreditOutstandingAmount",
+            "us-gaap:Liabilities",
+            "us-gaap:LiabilitiesAndStockholdersEquity",
+            "us-gaap:LiabilitiesCurrent",
+            "us-gaap:LongTermDebt",
+            "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalAfterYearFive",
+            "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths",
+            "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFive",
+            "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFour",
+            "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearThree",
+            "us-gaap:LongTermDebtMaturitiesRepaymentsOfPrincipalInYearTwo",
+            "us-gaap:MinorityInterest",
+            "us-gaap:MinorityInterestDecreaseFromDistributionsToNoncontrollingInterestHolders",
+            "us-gaap:MinorityInterestDecreaseFromRedemptions",
+            "us-gaap:NetCashProvidedByUsedInFinancingActivities",
+            "us-gaap:NetCashProvidedByUsedInInvestingActivities",
+            "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+            "us-gaap:NetIncomeLoss",
+            "us-gaap:NetIncomeLossAttributableToNoncontrollingInterest",
+            "us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic",
+            "us-gaap:NetIncomeLossAvailableToCommonStockholdersDiluted",
+            "us-gaap:NoncashOrPartNoncashAcquisitionValueOfAssetsAcquired1",
+            "us-gaap:NoncurrentAssets",
+            "us-gaap:NotesAndLoansReceivableNetCurrent",
+            "us-gaap:NumberOfOperatingSegments",
+            "us-gaap:NumberOfReportableSegments",
+            "us-gaap:OperatingExpenses",
+            "us-gaap:OperatingIncomeLoss",
+            "us-gaap:OperatingLeaseLiability",
+            "us-gaap:OperatingLeaseLiabilityCurrent",
+            "us-gaap:OperatingLeaseLiabilityNoncurrent",
+            "us-gaap:OperatingLeasePayments",
+            "us-gaap:OperatingLeaseRightOfUseAsset",
+            "us-gaap:OperatingLeaseWeightedAverageDiscountRatePercent",
+            "us-gaap:OtherAssetsNoncurrent",
+            "us-gaap:OtherComprehensiveIncomeLossForeignCurrencyTransactionAndTranslationAdjustmentNetOfTax",
+            "us-gaap:OtherComprehensiveIncomeLossNetOfTax",
+            "us-gaap:OtherComprehensiveIncomeLossNetOfTaxPortionAttributableToParent",
+            "us-gaap:OtherLiabilitiesCurrent",
+            "us-gaap:OtherLiabilitiesNoncurrent",
+            "us-gaap:OtherNonoperatingIncomeExpense",
+            "us-gaap:PaymentsOfDebtIssuanceCosts",
+            "us-gaap:PaymentsToAcquireBusinessesNetOfCashAcquired",
+            "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+            "us-gaap:PaymentsToMinorityShareholders",
+            "us-gaap:PreferredStockParOrStatedValuePerShare",
+            "us-gaap:PreferredStockSharesAuthorized",
+            "us-gaap:PreferredStockSharesIssued",
+            "us-gaap:PreferredStockSharesOutstanding",
+            "us-gaap:PreferredStockValue",
+            "us-gaap:PrepaidExpenseAndOtherAssetsCurrent",
+            "us-gaap:ProceedsFromIssuanceOfSharesUnderIncentiveAndShareBasedCompensationPlansIncludingStockOptions",
+            "us-gaap:ProceedsFromMinorityShareholders",
+            "us-gaap:ProceedsFromRepaymentsOfSecuredDebt",
+            "us-gaap:ProductWarrantyAccrualPreexistingIncreaseDecrease",
+            "us-gaap:ProfitLoss",
+            "us-gaap:PropertyPlantAndEquipmentGross",
+            "us-gaap:PropertyPlantAndEquipmentNet",
+            "us-gaap:PropertySubjectToOrAvailableForOperatingLeaseAccumulatedDepreciation",
+            "us-gaap:PropertySubjectToOrAvailableForOperatingLeaseGross",
+            "us-gaap:RedeemableNoncontrollingInterestEquityCarryingAmount",
+            "us-gaap:ResearchAndDevelopmentExpense",
+            "us-gaap:RestrictedCashCurrent",
+            "us-gaap:RestrictedCashNoncurrent",
+            "us-gaap:RetainedEarningsAccumulatedDeficit",
+            "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
+            "us-gaap:Revenues",
+            "us-gaap:RightOfUseAssetObtainedInExchangeForFinanceLeaseLiability",
+            "us-gaap:RightOfUseAssetObtainedInExchangeForOperatingLeaseLiability",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceived",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedFiveYears",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedFourYears",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedNextTwelveMonths",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedThereafter",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedThreeYears",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivablePaymentsToBeReceivedTwoYears",
+            "us-gaap:SalesTypeLeaseLeaseReceivable",
+            "us-gaap:SalesTypeLeaseNetInvestmentInLease",
+            "us-gaap:SellingGeneralAndAdministrativeExpense",
+            "us-gaap:ShareBasedCompensation",
+            "us-gaap:ShareBasedCompensationArrangementByShareBasedPaymentAwardDiscountFromMarketPriceOfferingDate",
+            "us-gaap:ShareBasedCompensationArrangementByShareBasedPaymentAwardOptionsExercisesInPeriodTotalIntrinsicValue",
+            "us-gaap:StandardProductWarrantyAccrual",
+            "us-gaap:StandardProductWarrantyAccrualPayments",
+            "us-gaap:StandardProductWarrantyAccrualWarrantiesIssued",
+            "us-gaap:StockholdersEquity",
+            "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+            "us-gaap:StockIssuedDuringPeriodSharesEmployeeStockPurchasePlans",
+            "us-gaap:TaxesPayableCurrent",
+            "us-gaap:UnrecognizedTaxBenefits",
+            "us-gaap:UnrecognizedTaxBenefitsDecreasesResultingFromPriorPeriodTaxPositions",
+            "us-gaap:UnrecognizedTaxBenefitsIncomeTaxPenaltiesAndInterestAccrued",
+            "us-gaap:UnrecognizedTaxBenefitsIncreasesResultingFromCurrentPeriodTaxPositions",
+            "us-gaap:UnrecognizedTaxBenefitsIncreasesResultingFromPriorPeriodTaxPositions",
+            "us-gaap:UnrecognizedTaxBenefitsThatWouldImpactEffectiveTaxRate",
+            "us-gaap:ValuationAllowanceDeferredTaxAssetChangeInAmount",
+            "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding",
+            "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic",
+            "us-gaap:DeferredStateAndLocalIncomeTaxExpenseBenefit",
+            "us-gaap:DefinedContributionPlanEmployerMatchingContributionPercentOfMatch",
+            "us-gaap:DefinedContributionPlanMaximumAnnualContributionsPerEmployeeAmount",
+            "us-gaap:DilutiveSecuritiesEffectOnBasicEarningsPerShareOther",
+            "us-gaap:ForeignCurrencyTransactionGainLossUnrealized",
+            "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAfterAllowanceForCreditLoss",
+            "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAllowanceForCreditLoss",
+            "us-gaap:AvailableForSaleSecuritiesDebtSecurities",
+            "us-gaap:DeferredTaxLiabilityNotRecognizedAmountOfUnrecognizedDeferredTaxLiabilityUndistributedEarningsOfForeignSubsidiaries",
+            "us-gaap:PaymentsToAcquireInvestments",
+            "us-gaap:ProceedsFromIssuanceOfDebt",
+            "us-gaap:ProceedsFromSaleMaturityAndCollectionsOfInvestments",
+            "us-gaap:ShortTermInvestments",
+            "us-gaap:UnrealizedGainLossOnInvestments",
+            "us-gaap:UnrecognizedTaxBenefitsReductionsResultingFromLapseOfApplicableStatuteOfLimitations",
+            "us-gaap:RevenueRemainingPerformanceObligation",
+            "us-gaap:ProceedsFromSaleOfShortTermInvestments",
+            "us-gaap:AvailableForSaleDebtSecuritiesAmortizedCostBasis",
+            "us-gaap:RepaymentsOfConvertibleDebt",
+            "us-gaap:TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests",
+            "us-gaap:TemporaryEquityNetIncome",
+            "us-gaap:AvailableForSaleDebtSecuritiesAccumulatedGrossUnrealizedGainBeforeTax",
+            "us-gaap:AvailableForSaleDebtSecuritiesAccumulatedGrossUnrealizedLossBeforeTax",
+            "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesNextRollingTwelveMonthsFairValue",
+            "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesRollingYearSixThroughTenFairValue",
+            "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesRollingYearTwoThroughFiveFairValue",
+            "us-gaap:AvailableForSaleSecuritiesDebtMaturitiesSingleMaturityDate",
+            "us-gaap:DeferredIncomeTaxAssetsNet",
+            "us-gaap:EffectiveIncomeTaxRateReconciliationGiltiAmount",
+            "us-gaap:EffectiveIncomeTaxRateReconciliationShareBasedCompensationExcessTaxBenefitAmount",
+            "us-gaap:OperatingLeaseCost",
+            "us-gaap:RepaymentsOfDebt",
+            "us-gaap:SalesTypeAndDirectFinancingLeasesLeaseReceivableUndiscountedExcessAmount",
+            "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAfterAllowanceForCreditLossCurrent",
+            "us-gaap:SalesTypeLeaseNetInvestmentInLeaseAfterAllowanceForCreditLossNoncurrent",
+            "us-gaap:UnrecognizedTaxBenefitsDecreasesResultingFromSettlementsWithTaxingAuthorities",
+            "us-gaap:UnrecognizedTaxBenefitsIncomeTaxPenaltiesAndInterestExpense",
+            "us-gaap:GuaranteeObligationsMaximumExposure",
+            "us-gaap:InterestExpenseNonoperating",
+            "us-gaap:CryptoAssetFairValue",
+            "us-gaap:DeferredTaxAssetsOther",
+            "us-gaap:InterestIncomeShortTermInvestmentOther",
+            "us-gaap:EffectiveIncomeTaxRateReconciliationCrossBorderTaxEffectAmount",
+            "us-gaap:IncomeTaxesPaidNet",
+            "us-gaap:IncomeTaxReconciliationTaxContingencies",
+            "us-gaap:RelatedPartyTransactionAmountsOfTransaction",
+            "custom:CapitalExpenditure",
+            "custom:FreeCashFlow"
+          ]
+        },
+        "is_composite": true,
+        "table_fallback_count": 0,
+        "retrieval_mode": "per_period",
+        "sub_query_count": 3,
+        "per_period": {
+          "2022-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 0,
+            "fused_hits": 3,
+            "query_text": "cost of automotive revenue for FY2022",
+            "doc_id_filter": [
+              "726d7206-140b-55c5-a32b-78a77d7984d8"
+            ],
+            "scope_miss": false
+          },
+          "2023-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 823,
+            "fused_hits": 3,
+            "query_text": "What supply chain risk factors did Tesla mention in its 2023 10-K",
+            "doc_id_filter": [
+              "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+            ],
+            "scope_miss": false
+          }
+        },
+        "fact_hits": 823,
+        "fused_hits": 6,
+        "linked_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 0,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2022-12-31": {
+            "has_facts": false,
+            "fact_count": 0,
+            "concept_count": 0,
+            "matched_concepts": [],
+            "missing_concepts": [
+              "us-gaap:CostOfGoodsAndServicesSold"
+            ],
+            "has_required_concepts": false
+          },
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 823,
+            "concept_count": 0,
+            "matched_concepts": [],
+            "missing_concepts": [
+              "us-gaap:CostOfGoodsAndServicesSold"
+            ],
+            "has_required_concepts": false
+          }
+        },
+        "composite_local_fallback_used": true,
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "vector_hits": 0,
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-004",
+      "answer_status": "ok",
+      "answer_text": "Tesla's research and development expenses increased from $2,593 million in FY2021 to $4,540 million in FY2024. The trend direction is an increase of 74% over this period.",
+      "latency_ms": 6072.29,
+      "passed": false,
+      "notes": "",
+      "legacy_passed": true,
+      "structured_passed": false,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:ResearchAndDevelopmentExpense"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": false,
+        "periods_missing_facts": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "facts_missing_by_period": {
+          "2022-12-31": [
+            "us-gaap:ResearchAndDevelopmentExpense"
+          ],
+          "2023-12-31": [
+            "us-gaap:ResearchAndDevelopmentExpense"
+          ]
+        },
+        "calc_correct": null,
+        "calc_detail": "",
+        "operation_ok": null,
+        "operation_detail": "",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 6,
+        "table_chunks_count": 7,
+        "fact_records_count": 5,
+        "retrieval_scores": {
+          "5922aa6b-13f6-4b59-9f2c-a36d285665fa": 0.01639344262295082,
+          "f3e5dec7-903a-4bef-af3e-1bf4b09029c3": 0.01639344262295082,
+          "fa725458-3343-43f6-ad72-bc99eeb26bf0": 0.016129032258064516,
+          "f65192e5-88e0-4641-a22e-7fc8fe19f02d": 0.016129032258064516,
+          "06ef16a4-3e50-4471-9b24-e1dd588e5388": 0.030679156908665108,
+          "0522726e-4769-40be-9306-06f284da9eec": 0.029631255487269532,
+          "044bef00-269f-4f72-be04-f3adf5b0957e": 0.02782608695652174,
+          "a66d3a8b-3c8c-4875-9ba2-6b0f12759b0d": 0.01639344262295082,
+          "81c93590-22c4-4b5e-8f8a-325a3d9f7990": 0.0,
+          "e8c1a77b-da6b-401d-b27b-83e250f0846c": 0.0,
+          "8e967655-22d6-438b-ae9e-a986272736e2": 0.0,
+          "ab5fe313-aeed-4d38-a9ee-2e8c308c6da2": 0.0,
+          "fe73a936-97c5-40f9-84ec-9d5dc2ed733a": 0.0
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "lookup",
+        "required_periods": [
+          "2021-12-31",
+          "2024-12-31"
+        ],
+        "required_concepts": [
+          "us-gaap:ResearchAndDevelopmentExpense"
+        ],
+        "period_semantics": {
+          "2021-12-31": "annual_cumulative",
+          "2024-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "us-gaap:ResearchAndDevelopmentExpense"
+        ],
+        "fact_concepts_by_period": {
+          "2021-12-31": [
+            "us-gaap:ResearchAndDevelopmentExpense"
+          ],
+          "2024-12-31": [
+            "us-gaap:ResearchAndDevelopmentExpense"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "retrieval_mode": "per_period",
+        "sub_query_count": 2,
+        "per_period": {
+          "2021-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 3,
+            "fused_hits": 4,
+            "query_text": "r&d for FY2021",
+            "doc_id_filter": [
+              "ce42cb0c-6daa-5c02-a3f4-40c08c1bf5cd"
+            ],
+            "scope_miss": false
+          },
+          "2024-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 2,
+            "fused_hits": 4,
+            "query_text": "r&d for FY2024",
+            "doc_id_filter": [
+              "447d47b8-5ffd-5c88-8f98-0090e487e57f"
+            ],
+            "scope_miss": false
+          }
+        },
+        "fact_hits": 5,
+        "fused_hits": 8,
+        "linked_periods": [
+          "2021-12-31",
+          "2024-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 5,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2021-12-31": {
+            "has_facts": true,
+            "fact_count": 3,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:ResearchAndDevelopmentExpense"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          },
+          "2024-12-31": {
+            "has_facts": true,
+            "fact_count": 2,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:ResearchAndDevelopmentExpense"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "vector_hits": 0,
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-005",
+      "answer_status": "ok",
+      "answer_text": "Based on the provided facts and calculation steps, the operating income ratios (Operating Income Loss as a percentage of Revenues) are ranked as follows:\n\n1. 11.42% (period ending 2023-03-31) - Derived from 2,664,000,000.00 USD Operating Income and 23,329,000,000.00 USD Revenues.\n2. 10.49% (period ending 2023-06-30) - Derived from 5,063,000,000.00 USD Operating Income and 48,256,000,000.00 USD Revenues.\n3. 9.53% (period ending 2023-09-30) - Derived from 6,827,000,000.00 USD Operating Income and 71,606,000,000.00 USD Revenues.",
+      "latency_ms": 11227.37,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": false,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:OperatingIncomeLoss",
+          "us-gaap:Revenues"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": true,
+        "calc_detail": "Operation type assertion only: rank. No expected_value to verify.",
+        "operation_ok": true,
+        "operation_detail": "Expected operation=rank, actual=rank → PASS",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 4,
+        "table_chunks_count": 41,
+        "fact_records_count": 20,
+        "retrieval_scores": {
+          "1b8b7da1-01f9-4414-bf18-934365d906d1": 0.032266458495966696,
+          "417ff16a-a888-4556-8c6c-9177415b61b9": 0.03007688828584351,
+          "1f8ea5e6-b58b-4045-a187-abd1de4ed94c": 0.027984344422700584,
+          "769be449-cab1-48bd-9cf3-738faca17e1d": 0.029827662395050816,
+          "0268600d-e0ca-4b99-bbf6-dec7b95409a4": 0.028991596638655463,
+          "e35b2979-0e1c-4c2d-96f8-ae3c45a368fa": 0.02821939586645469,
+          "6d2bd9a4-7269-40db-8098-2e3834825cad": 0.032018442622950824,
+          "05e2b001-c10e-476f-aa5b-211c1bfca11b": 0.0315136476426799,
+          "3c70d917-e396-4082-b7d5-d353ef072fb6": 0.03057889822595705,
+          "28bf02e7-0fbb-47d8-9c5e-384efcdbcff2": 0.0,
+          "3b7948b0-040c-4ff6-aea3-712df0edfd1e": 0.0,
+          "5f54ff85-c754-4ff5-a2f6-f807d28e3dea": 0.0,
+          "767724aa-048d-4905-a1b2-4851fd5a2071": 0.0,
+          "7e14e863-249b-4140-b0c0-8ef415aeb62d": 0.0,
+          "8743c6b2-f818-4c4c-bc57-641e3e777f3c": 0.0,
+          "8a90d67d-161a-4236-9923-179f2c2310e1": 0.0,
+          "9218e426-dcea-4e00-add0-4245f5162aef": 0.0,
+          "a270dc2c-30e1-4b4f-8fff-a97d17c53392": 0.0,
+          "cbc91af2-e8bb-473d-8bfa-93a58e568efb": 0.0,
+          "d54d4b5b-a58a-4545-8c22-f4cf5f2c17c1": 0.0,
+          "f55f35f1-9b41-4b54-818b-569b2cdc7dd3": 0.0,
+          "267c9ba1-5ebd-40c0-8f55-a576204595b3": 0.0,
+          "2bf77e00-8987-40f0-912c-b66e4c31c272": 0.0,
+          "6278c41c-6c8e-435e-9e6a-53df912e9cb1": 0.0,
+          "6d3db030-cde8-4d0a-b576-1d6ceee8bc89": 0.0,
+          "7738b200-341f-4cdc-995f-310d4a9579bd": 0.0,
+          "82b860c7-ba6f-4040-aa24-e0b08f35e578": 0.0,
+          "833c83dd-f920-49c5-b13e-bc2115f9e8d1": 0.0,
+          "92602fee-93d7-43f7-9c8a-6be221dfa9e5": 0.0,
+          "a287e6d1-bfcc-411b-80db-d7351e3a98cd": 0.0,
+          "b0f22650-df68-485a-972a-278c0a0e847b": 0.0,
+          "c8d97836-d95f-4909-9c66-72793647e9ba": 0.0,
+          "d0fdb43c-4728-40c7-933f-2302c93b0887": 0.0,
+          "e9643819-a4ad-438c-b5cb-288fb19e19c9": 0.0,
+          "0b19a70b-133b-4b08-bad1-889c01c958c3": 0.0,
+          "254aca5d-7580-464c-9d41-cf7e7a4c2bec": 0.0,
+          "2d3ac3be-4b2c-421c-8458-3d18bee8adc9": 0.0,
+          "43f2cfef-d766-4762-a42e-d751019f2bf0": 0.0,
+          "7b271910-34b6-4fc2-b457-c202ca5a2a9d": 0.0,
+          "8bef021a-59c3-40fe-acf4-5c468c4c45b5": 0.0,
+          "bd1fbcb1-e26c-494f-ae73-be0111676bb6": 0.0,
+          "c878be4f-d034-4ff6-bd68-c65d3cb16646": 0.0,
+          "ebdbe79a-12a7-4b63-8803-6f245b23f37d": 0.0,
+          "eda40b7f-1fd2-4cfd-9675-dc4bb7a3c19f": 0.0,
+          "f6d11f29-3ce5-4e84-bf82-e091eab72835": 0.0
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "rank",
+        "required_periods": [
+          "2023-03-31",
+          "2023-06-30",
+          "2023-09-30"
+        ],
+        "required_concepts": [
+          "us-gaap:OperatingIncomeLoss",
+          "us-gaap:Revenues"
+        ],
+        "period_semantics": {
+          "2023-03-31": "quarterly_standalone",
+          "2023-06-30": "quarterly_standalone",
+          "2023-09-30": "quarterly_standalone"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "us-gaap:OperatingIncomeLoss",
+          "us-gaap:Revenues"
+        ],
+        "fact_concepts_by_period": {
+          "2023-03-31": [
+            "us-gaap:OperatingIncomeLoss",
+            "us-gaap:Revenues"
+          ],
+          "2023-06-30": [
+            "us-gaap:OperatingIncomeLoss",
+            "us-gaap:Revenues"
+          ],
+          "2023-09-30": [
+            "us-gaap:OperatingIncomeLoss",
+            "us-gaap:Revenues"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "retrieval_mode": "per_period",
+        "sub_query_count": 3,
+        "per_period": {
+          "2023-03-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 2,
+            "fused_hits": 3,
+            "query_text": "operating income for Q1 2023",
+            "doc_id_filter": [
+              "a7b3d9a0-3236-57dc-aba3-e2cfe3c2e450"
+            ],
+            "scope_miss": false
+          },
+          "2023-06-30": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 4,
+            "fused_hits": 3,
+            "query_text": "operating income for Q2 2023",
+            "doc_id_filter": [
+              "5bbca73f-965e-5e0f-90c3-d5c44960e34f"
+            ],
+            "scope_miss": false
+          },
+          "2023-09-30": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 4,
+            "fused_hits": 3,
+            "query_text": "operating income for Q3 2023",
+            "doc_id_filter": [
+              "b3f5ee61-6a9c-5a13-89ca-737a861dc6cf"
+            ],
+            "scope_miss": false
+          }
+        },
+        "fact_hits": 10,
+        "fused_hits": 9,
+        "linked_periods": [
+          "2023-03-31",
+          "2023-06-30",
+          "2023-09-30"
+        ],
+        "linked_facts_count": 10,
+        "linked_tables_count": 36,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2023-03-31": {
+            "has_facts": true,
+            "fact_count": 4,
+            "concept_count": 2,
+            "matched_concepts": [
+              "us-gaap:OperatingIncomeLoss",
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          },
+          "2023-06-30": {
+            "has_facts": true,
+            "fact_count": 8,
+            "concept_count": 2,
+            "matched_concepts": [
+              "us-gaap:OperatingIncomeLoss",
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          },
+          "2023-09-30": {
+            "has_facts": true,
+            "fact_count": 8,
+            "concept_count": 2,
+            "matched_concepts": [
+              "us-gaap:OperatingIncomeLoss",
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "vector_hits": 0,
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-006",
+      "answer_status": "ok",
+      "answer_text": "Based on the evidence provided, the cash and cash equivalents at carrying value for Tesla, Inc. were:\n\n- $16,253,000,000.00 USD as of the period ending December 31, 2022.\n- $16,398,000,000.00 USD as of the period ending December 31, 2023.",
+      "latency_ms": 7305.53,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": true,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": null,
+        "calc_detail": "",
+        "operation_ok": null,
+        "operation_detail": "",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 6,
+        "table_chunks_count": 2,
+        "fact_records_count": 18,
+        "retrieval_scores": {
+          "f5441dd1-d2ca-4897-b383-515741182503": 0.029906956136464335,
+          "8471fabf-76c1-4481-a80a-e3ac6f7e4954": 0.029386529386529386,
+          "db86fa83-8ffb-47d2-9401-13370de00b22": 0.02904040404040404,
+          "8a06a9ce-1714-4093-b77a-0e67182d9dc8": 0.01639344262295082,
+          "d9b9bb2d-e553-4df8-9917-77b7e4a4969a": 0.03177805800756621,
+          "6e0dd771-5bb8-4d53-8eb8-7ed9b56728f1": 0.03057889822595705,
+          "6f5bc7ee-4ed7-4140-996e-4ca3ca73974e": 0.0304147465437788,
+          "5d8a73de-1d31-48a4-b98d-0a3a1bb3bb76": 0.030090497737556562
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "lookup",
+        "required_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+        ],
+        "period_semantics": {
+          "2022-12-31": "annual_cumulative",
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+        ],
+        "fact_concepts_by_period": {
+          "2022-12-31": [
+            "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+          ],
+          "2023-12-31": [
+            "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "retrieval_mode": "per_period",
+        "sub_query_count": 2,
+        "per_period": {
+          "2022-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 9,
+            "fused_hits": 4,
+            "query_text": "cash for FY2022",
+            "doc_id_filter": [
+              "726d7206-140b-55c5-a32b-78a77d7984d8"
+            ],
+            "scope_miss": false
+          },
+          "2023-12-31": {
+            "lexical_hits": 15,
+            "vector_hits": 15,
+            "fact_hits": 9,
+            "fused_hits": 4,
+            "query_text": "cash for FY2023",
+            "doc_id_filter": [
+              "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+            ],
+            "scope_miss": false
+          }
+        },
+        "fact_hits": 18,
+        "fused_hits": 8,
+        "linked_periods": [
+          "2022-12-31",
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 0,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2022-12-31": {
+            "has_facts": true,
+            "fact_count": 9,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          },
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 9,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:CashAndCashEquivalentsAtCarryingValue"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "vector_hits": 0,
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-007",
+      "answer_status": "ok",
+      "answer_text": "The free cash flow for the period ending December 31, 2023, is $4,358,000,000.00 USD. This is calculated by subtracting the capital expenditure of $8,898,000,000.00 USD from the net cash provided by operating activities of $13,256,000,000.00 USD.",
+      "latency_ms": 7439.1,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": true,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "custom:FreeCashFlow",
+          "custom:CapitalExpenditure",
+          "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": true,
+        "calc_detail": "Expected ≈4358000000.0, best match = 4358000000.0, rel_error = 0.000000, tolerance = 0.01 → PASS",
+        "operation_ok": true,
+        "operation_detail": "Expected operation=lookup, actual=step_trace → PASS",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 7,
+        "table_chunks_count": 1,
+        "fact_records_count": 9,
+        "retrieval_scores": {
+          "86a15120-dc0a-4ea2-8765-b1973f3950d9": 0.032266458495966696,
+          "1c708e9a-b83f-417e-af26-1c91e309c549": 0.03131881575727918,
+          "5d8a73de-1d31-48a4-b98d-0a3a1bb3bb76": 0.02964426877470356,
+          "f523b4ee-380b-4055-b511-4928f7f26c5b": 0.029411764705882353,
+          "2aee3836-0c60-45d5-8638-ce8606015155": 0.02871794871794872,
+          "6e0dd771-5bb8-4d53-8eb8-7ed9b56728f1": 0.028006267136701922,
+          "04a81f41-3b6f-4a9f-8b6e-702a26e509a4": 0.016129032258064516,
+          "6f5bc7ee-4ed7-4140-996e-4ca3ca73974e": 0.016129032258064516
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "step_trace",
+        "required_periods": [
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "custom:CapitalExpenditure",
+          "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+          "custom:FreeCashFlow"
+        ],
+        "period_semantics": {
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "custom:CapitalExpenditure",
+          "custom:FreeCashFlow",
+          "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+        ],
+        "fact_concepts_by_period": {
+          "2023-12-31": [
+            "custom:CapitalExpenditure",
+            "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+            "custom:FreeCashFlow"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "lexical_hits": 15,
+        "vector_hits": 15,
+        "fact_hits": 9,
+        "fused_hits": 8,
+        "query_text": "Calculate Tesla's free cash flow for FY2023 by subtracting capital expenditures from operating cash flow. Show each step. calculate tesla's free cash flow subtracting capital expenditures operating cash flow show step custom:CapitalExpenditure us-gaap:NetCashProvidedByUsedInOperatingActivities custom:FreeCashFlow",
+        "doc_id_filter": [
+          "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+        ],
+        "retrieval_mode": "single_pass",
+        "linked_periods": [
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 0,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 9,
+            "concept_count": 3,
+            "matched_concepts": [
+              "custom:CapitalExpenditure",
+              "custom:FreeCashFlow",
+              "us-gaap:NetCashProvidedByUsedInOperatingActivities"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-008",
+      "answer_status": "ok",
+      "answer_text": "The total revenues for the period ending December 31, 2023, are $96,773,000,000.00 USD.",
+      "latency_ms": 5850.82,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": false,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "us-gaap:Revenues"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": true,
+        "calc_detail": "Expected ≈96773000000.0, best match = 96773000000.0, rel_error = 0.000000, tolerance = 0.01 → PASS",
+        "operation_ok": true,
+        "operation_detail": "Expected operation=lookup, actual=lookup → PASS",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 7,
+        "table_chunks_count": 13,
+        "fact_records_count": 3,
+        "retrieval_scores": {
+          "e5cb284a-f9ae-47b7-8237-15cec19bdf8c": 0.031544957774465976,
+          "d4f2148e-5487-4086-af68-6bd6f755fa2b": 0.031544957774465976,
+          "8a21e1fa-7cd1-4a70-b6fc-9f653f6f24b3": 0.03076923076923077,
+          "b1a91f0b-eede-4ccd-9c45-e5c932262e00": 0.030621785881252923,
+          "52efa68c-46fa-43f5-ba49-65c6159a1741": 0.030330882352941176,
+          "452da7e0-b0ac-476f-bbe3-076478979c55": 0.028258706467661692,
+          "dd9b123a-6350-4fee-93b3-eaf9bd4598e5": 0.02819138376017471,
+          "8c9a3069-239c-4e0c-94bf-a4e4e34d05d3": 0.02797339593114241,
+          "0e7093c6-b951-4005-ad77-3faa91e43af1": 0.0,
+          "2ae73a39-3a01-4a3d-8470-95a252f5f341": 0.0,
+          "2bd6d242-b3bb-4ce5-abb8-44484762cef0": 0.0,
+          "537d2dfe-3fc4-44ee-b3f0-3f362fcd1294": 0.0,
+          "539732fb-011f-44d8-af32-1bf8f3e83a9b": 0.0,
+          "78216681-74c3-47fd-bf63-06a2efc761a7": 0.0,
+          "8ce51294-5cad-4d5b-8eb3-93ac2e5ae857": 0.0,
+          "8f4c10e6-8d54-486d-b537-3d769a246c3a": 0.0,
+          "b0c68798-90c7-43c7-a565-7e2c6e314285": 0.0,
+          "c0a18a6d-f560-4a6d-ac9e-347288df4cc2": 0.0,
+          "e9a28be2-9d48-429b-bf20-37bbe8191591": 0.0,
+          "ebe7f917-da05-4488-8df6-f1a40e2f9088": 0.0
+        },
+        "query_type": "numeric_calculation",
+        "calculation_intent": "lookup",
+        "required_periods": [
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "us-gaap:Revenues"
+        ],
+        "period_semantics": {
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "us-gaap:Revenues"
+        ],
+        "fact_concepts_by_period": {
+          "2023-12-31": [
+            "us-gaap:Revenues"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "lexical_hits": 15,
+        "vector_hits": 15,
+        "fact_hits": 3,
+        "fused_hits": 8,
+        "query_text": "What was Tesla's total revenue in FY2023? tesla's total revenue us-gaap:Revenues",
+        "doc_id_filter": [
+          "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+        ],
+        "retrieval_mode": "single_pass",
+        "linked_periods": [
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 12,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 3,
+            "concept_count": 1,
+            "matched_concepts": [
+              "us-gaap:Revenues"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    },
+    {
+      "question_id": "BQ-009",
+      "answer_status": "ok",
+      "answer_text": "The free cash flow for the period ending December 31, 2023, is $4,358,000,000.00 USD.",
+      "latency_ms": 6183.73,
+      "passed": true,
+      "notes": "",
+      "legacy_passed": true,
+      "structured_passed": true,
+      "judge_breakdown": {
+        "status_ok": true,
+        "facts_found": [
+          "custom:FreeCashFlow"
+        ],
+        "facts_missing": [],
+        "period_facts_ok": true,
+        "periods_missing_facts": [],
+        "facts_missing_by_period": {},
+        "calc_correct": true,
+        "calc_detail": "Expected ≈4358000000.0, best match = 4358000000.0, rel_error = 0.000000, tolerance = 0.01 → PASS",
+        "operation_ok": true,
+        "operation_detail": "Expected operation=lookup, actual=lookup → PASS",
+        "narrative_terms_found": [],
+        "narrative_terms_missing": []
+      },
+      "retrieval_debug": {
+        "section_chunks_count": 7,
+        "table_chunks_count": 1,
+        "fact_records_count": 3,
+        "retrieval_scores": {
+          "5d8a73de-1d31-48a4-b98d-0a3a1bb3bb76": 0.03028233151183971,
+          "1589eb24-ee3a-4e48-b453-0445ac1053dd": 0.030117753623188408,
+          "86a15120-dc0a-4ea2-8765-b1973f3950d9": 0.029910714285714284,
+          "0d2157b2-b8bb-4cce-a17a-376f6d8f7cc5": 0.027799227799227798,
+          "04a81f41-3b6f-4a9f-8b6e-702a26e509a4": 0.01639344262295082,
+          "4253e30b-0d71-48ac-8a0a-41486c25f983": 0.016129032258064516,
+          "6f5bc7ee-4ed7-4140-996e-4ca3ca73974e": 0.016129032258064516,
+          "e183614b-4240-4df9-9526-455706ab402d": 0.015873015873015872
+        },
+        "query_type": "hybrid_reasoning",
+        "calculation_intent": "lookup",
+        "required_periods": [
+          "2023-12-31"
+        ],
+        "required_concepts": [
+          "custom:FreeCashFlow"
+        ],
+        "period_semantics": {
+          "2023-12-31": "annual_cumulative"
+        },
+        "limitation_reasons": [],
+        "numeric_limitation_reasons": [],
+        "missing_periods": [],
+        "missing_concepts_by_period": {},
+        "missing_narrative_periods": [],
+        "retrieved_fact_concepts": [
+          "custom:FreeCashFlow"
+        ],
+        "fact_concepts_by_period": {
+          "2023-12-31": [
+            "custom:FreeCashFlow"
+          ]
+        },
+        "is_composite": false,
+        "table_fallback_count": 0,
+        "lexical_hits": 15,
+        "vector_hits": 15,
+        "fact_hits": 3,
+        "fused_hits": 8,
+        "query_text": "What was Tesla's free cash flow in FY2023? tesla's free cash flow custom:FreeCashFlow",
+        "doc_id_filter": [
+          "e7477fcf-e8fe-5903-b41d-0eba94b0267a"
+        ],
+        "retrieval_mode": "single_pass",
+        "linked_periods": [
+          "2023-12-31"
+        ],
+        "linked_facts_count": 0,
+        "linked_tables_count": 0,
+        "table_fallback_details": [],
+        "period_coverage": {
+          "2023-12-31": {
+            "has_facts": true,
+            "fact_count": 3,
+            "concept_count": 1,
+            "matched_concepts": [
+              "custom:FreeCashFlow"
+            ],
+            "missing_concepts": [],
+            "has_required_concepts": true
+          }
+        },
+        "provider_mode": "local",
+        "answer_provider": "ollama",
+        "answer_model": "qwen2.5:7b",
+        "chat_model": "qwen2.5:7b",
+        "answer_base_url": "http://localhost:11434/v1",
+        "active_scope": {
+          "fiscal_years": [],
+          "filing_type": null,
+          "quarters": []
+        },
+        "available_filings": 20,
+        "embedding_provider": "shared-indexing-backend",
+        "embedding_model": "nomic-embed-text",
+        "indexed_embedding_provider": "shared-indexing-backend",
+        "indexed_embedding_model": "nomic-embed-text",
+        "indexed_embedding_base_url": "http://localhost:11434/v1",
+        "base_url": "http://localhost:11434/v1"
+      }
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "pass_count": 7,
+    "fail_count": 2,
+    "error_count": 0,
+    "avg_latency_ms": 17357.63,
+    "pass_rate": 0.7778
+  }
+}

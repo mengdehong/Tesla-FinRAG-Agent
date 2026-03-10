@@ -31,10 +31,3 @@
     - 具体改进方案：提出针对该原因的、可落地的改进措施（例如，引入基于文档结构的检索、为表格创建单独的索引并添加时间戳元数据、设计Agent流程先定位相关文档再提取数据）。
 5. 交互与报告
   使用Streamlit 构建界面，允许用户选择查询范围（如“仅10-K”或“所有文档”），输入问题，并展示答案、引用片段和（可选的）检索调试信息。
-
-1. 包管理：uv
-2. UI 界面：Streamlit
-3. PDF解析：本地解析pdfplumber + pymupdf 与云端API解析如LlamaParse
-4. 向量数据库：基于Repository 模式，可替换介入：ChromaDB/LanceDB/FAISS等
-5. Embedding：阿里云DashScope/HuggingFace Inference API / 本地轻量 Embedding(基于ONNX运行量化模型)
-6. 检索架构：BM25 (关键词/词频) + 余弦相似度 (语义向量) 双路混合检索增强

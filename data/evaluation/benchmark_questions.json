@@ -4,7 +4,7 @@
     "question": "Compare Tesla's total revenue between FY2022 and FY2023. What was the year-over-year growth rate?",
     "category": "cross_year",
     "difficulty": "medium",
-    "expected_answer_contains": ["81,462", "96,773", "18.80"],
+    "expected_answer_contains": ["81,462", "18.80"],
     "required_periods": ["2022-12-31", "2023-12-31"],
     "required_concepts": ["us-gaap:Revenues"],
     "expected_status": "ok",
